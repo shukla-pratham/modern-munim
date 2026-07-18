@@ -1,0 +1,10 @@
+{
+  "name": "marketplace",
+  "private": true,
+  "scripts": {
+    "dev": "cd final-frontend && npm run dev",
+    "build": "cd final-frontend && npm run build",
+    "start": "cd final-frontend && npm run start",
+    "lint": "cd final-frontend && npm run lint"
+  }
+}
