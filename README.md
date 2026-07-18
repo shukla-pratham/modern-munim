@@ -236,6 +236,7 @@ See **[DEPLOY.md](DEPLOY.md)** for:
 | Admin | admin@marketplace.com | admin123 |
 | Manager | manager@marketplace.com | manager123 |
 | Ops | ops@marketplace.com | ops123 |
+| Customer | abcd@fufu.com | 1234567890 |
 
 ---
 

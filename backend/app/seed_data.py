@@ -50,6 +50,7 @@ def seed_users():
     internal_users = [
         ("ops@marketplace.com", "ops123", UserRole.CUSTOMER),
         ("sales@marketplace.com", "sales123", UserRole.CUSTOMER),
+        ("abcd@fufu.com", "1234567890", UserRole.CUSTOMER),
     ]
     
     for email, password, role in internal_users:
@@ -624,6 +625,7 @@ def main():
     print("Admin: admin@marketplace.com / admin123")
     print("Manager: manager@marketplace.com / manager123")
     print("Ops: ops@marketplace.com / ops123")
+    print("Customer: abcd@fufu.com / 1234567890")
 
 
 if __name__ == "__main__":

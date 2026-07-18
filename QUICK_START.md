@@ -51,7 +51,7 @@ python -m app.seed_data
 
 **Demo Credentials** (from seed data):
 - Admin: `admin@marketplace.com` / `admin123`
-- Customer: `customer1@marketplace.com` / `customer123`
+- Customer: `abcd@fufu.com` / `1234567890`
 
 ---
 
