@@ -1,4 +1,6 @@
 from app.models.user import User
+from app.models.email_otp import EmailOtp
+from app.models.workspace import Workspace, WorkspaceMembership
 from app.models.product import Product
 from app.models.order import Order, OrderItem
 from app.models.expense import Expense
@@ -13,7 +15,7 @@ from app.models.inventory_snapshot import InventorySnapshot
 from app.models.vendor import Vendor, VendorProduct, VendorPerformanceMetric
 
 __all__ = [
-    "User", "Product", "Order", "OrderItem", "Expense", "StockTransaction",
+    "User", "EmailOtp", "Workspace", "WorkspaceMembership", "Product", "Order", "OrderItem", "Expense", "StockTransaction",
     "DemandForecast", "StockoutPrediction", "RestockingRecommendation",
     "DeadStockDetection", "AIAlert", "TrendType",
     "JobRun", "JobStatus",

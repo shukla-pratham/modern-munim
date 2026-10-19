@@ -12,11 +12,12 @@
 
 | Method | Endpoint | Purpose | Access | Type | Notes |
 |--------|----------|---------|--------|------|-------|
-| POST | `/api/auth/register` | User registration | Public | Transactional | Creates user, hashes password |
-| POST | `/api/auth/login` | User authentication | Public | Read-only | Returns JWT token |
-| GET | `/api/auth/me` | Get current user info | Authenticated | Read-only | Requires valid JWT |
+| POST | `/api/auth/start` | Email+password gate | Public | Read/write | `needs_onboarding` or send OTP |
+| POST | `/api/auth/onboard` | Create admin + store | Public | Transactional | New email only; role=admin |
+| POST | `/api/auth/verify-otp` | OTP → JWT | Public | Transactional | Admin session |
+| GET | `/api/auth/me` | Current admin profile | Admin | Read-only | Requires admin JWT |
 
-**Total**: 3 endpoints
+**Total**: primary auth surface above (legacy login/register/request-otp disabled)
 
 ---
 
@@ -38,10 +39,10 @@
 
 | Method | Endpoint | Purpose | Access | Type | Notes |
 |--------|----------|---------|--------|------|-------|
-| POST | `/api/orders` | Create order (checkout) | Customer | Transactional | **Uses row-level locking**, atomic operation |
+| POST | `/api/orders` | Create order | Admin | Transactional | **Uses row-level locking**, atomic operation |
 | GET | `/api/orders` | List all orders | Admin | Read-only | Paginated, all orders |
-| GET | `/api/orders/my-orders` | Get user's orders | Customer | Read-only | Paginated, filtered by user |
-| GET | `/api/orders/{id}` | Get single order | Customer/Admin | Read-only | Customer sees own, admin sees any |
+| GET | `/api/orders/my-orders` | Get admin's orders | Admin | Read-only | Paginated, filtered by user |
+| GET | `/api/orders/{id}` | Get single order | Admin | Read-only | Admin-only |
 
 **Total**: 4 endpoints
 

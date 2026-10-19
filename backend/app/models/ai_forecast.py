@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Numeric, DateTime, ForeignKey, Text, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, Numeric, DateTime, ForeignKey, Text, Boolean, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
@@ -17,10 +17,20 @@ class DemandForecast(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True, index=True)
+    is_demo = Column(Boolean, default=False, nullable=False)
     forecast_date = Column(DateTime(timezone=True), nullable=False, index=True)  # Date being forecasted
     forecasted_quantity = Column(Numeric(10, 2), nullable=False)  # Predicted demand
     confidence_score = Column(Numeric(5, 2), nullable=False)  # 0-100 confidence
-    trend = Column(SQLEnum(TrendType), nullable=False)  # Overall trend
+    trend = Column(
+        SQLEnum(
+            TrendType,
+            name="trendtype",
+            values_callable=lambda x: [e.value for e in x],
+            create_type=False,
+        ),
+        nullable=False,
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     
     # Index for efficient queries: product + created_at for latest forecasts
@@ -38,6 +48,8 @@ class StockoutPrediction(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True, index=True)
+    is_demo = Column(Boolean, default=False, nullable=False)
     days_until_stockout = Column(Integer, nullable=False)  # Predicted days until stockout
     risk_level = Column(String, nullable=False)  # low, medium, high
     confidence_score = Column(Numeric(5, 2), nullable=False)  # 0-100
@@ -55,6 +67,8 @@ class RestockingRecommendation(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True, index=True)
+    is_demo = Column(Boolean, default=False, nullable=False)
     recommended_quantity = Column(Integer, nullable=False)
     recommended_timing_days = Column(Integer, nullable=False)  # Days until restock needed
     should_restock = Column(String, nullable=False)  # yes, no, urgent
@@ -79,6 +93,8 @@ class DeadStockDetection(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True, index=True)
+    is_demo = Column(Boolean, default=False, nullable=False)
     is_dead_stock = Column(String, nullable=False)  # yes, warning, no
     risk_score = Column(Numeric(5, 2), nullable=False)  # 0-100
     
@@ -103,6 +119,8 @@ class AIAlert(Base):
     id = Column(Integer, primary_key=True, index=True)
     alert_type = Column(String, nullable=False, index=True)  # stockout, dead_stock, low_margin, etc.
     product_id = Column(Integer, ForeignKey("products.id"), nullable=True, index=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True, index=True)
+    is_demo = Column(Boolean, default=False, nullable=False)
     severity = Column(String, nullable=False)  # low, medium, high, critical
     title = Column(String, nullable=False)
     message = Column(Text, nullable=False)

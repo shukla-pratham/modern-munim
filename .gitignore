@@ -27,6 +27,12 @@ venv.bak/
 .env.*
 !.env.example
 
+# Java / Maven
+backend-java/target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
 # Node
 node_modules/
 .next/
@@ -58,3 +64,16 @@ Thumbs.db
 
 # Alembic
 alembic/versions/*.pyc
+
+# Legacy / unrelated scaffolds
+nexus-ops/
+
+# Backups (database dumps — keep local only)
+backups/
+
+# Bun lock files
+bun.lockb
+
+# Agents / AI
+.agents/
+.gemini/

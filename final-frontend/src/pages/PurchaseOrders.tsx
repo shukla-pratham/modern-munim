@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { CheckCircle2, Circle, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { purchaseOrdersAPI, type PurchaseOrderResponse } from '@/lib/api';
+import { EMPTY_PO_LIST_MESSAGE, poApiError, poList } from '@/lib/purchaseOrderDisplay';
 
 function formatDate(iso: string | null): string {
   if (!iso) return '';
@@ -60,16 +61,13 @@ export default function PurchaseOrders() {
     purchaseOrdersAPI
       .list()
       .then((res) => {
-        const list = res.data ?? [];
+        const list = poList(res.data);
         setPurchaseOrders(list);
         if (list.length > 0 && selectedPoId == null) setSelectedPoId(list[0].id);
-        else if (list.length > 0 && !list.some((po) => po.id === selectedPoId)) setSelectedPoId(list[0].id);
+        else if (list.length > 0 && !list.some((row) => row.id === selectedPoId)) setSelectedPoId(list[0].id);
       })
       .catch((e: unknown) => {
-        const msg = (e as { response?: { status?: number } })?.response?.status === 403
-          ? 'You need admin access to view purchase orders.'
-          : 'Failed to load purchase orders.';
-        setError(msg);
+        setError(poApiError(e));
         setPurchaseOrders([]);
       })
       .finally(() => setLoading(false));
@@ -92,7 +90,7 @@ export default function PurchaseOrders() {
           <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
         </div>
       ) : purchaseOrders.length === 0 && !error ? (
-        <p className="text-muted-foreground text-sm">No purchase orders yet.</p>
+        <p className="text-muted-foreground text-sm">{EMPTY_PO_LIST_MESSAGE}</p>
       ) : (
         <>
           {/* PO list */}
@@ -126,7 +124,7 @@ export default function PurchaseOrders() {
                 <div className="text-sm text-muted-foreground space-y-1">
                   {selectedPo.items.map((item) => (
                     <p key={item.product_id}>
-                      {item.product_name} × {item.quantity} units — ${Number(item.total_cost).toLocaleString()}
+                      {item.product_name} × {item.quantity} units — ₹{Number(item.total_cost).toLocaleString()}
                     </p>
                   ))}
                 </div>

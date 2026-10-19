@@ -30,6 +30,8 @@ class Vendor(Base):
     reliability_score = Column(Numeric(5, 2), nullable=True)  # 0-100
     cost_score = Column(Numeric(5, 2), nullable=True)  # 0-100
     overall_score = Column(Numeric(5, 2), nullable=True)  # 0-100
+    workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True, index=True)
+    is_demo = Column(Boolean, default=False, nullable=False)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

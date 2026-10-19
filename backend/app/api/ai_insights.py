@@ -2,12 +2,11 @@
 API endpoints for reading AI/ML insights.
 All AI computation happens in background jobs - these endpoints only read results.
 """
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.core.database import get_db
-from app.core.dependencies import get_current_admin
-from app.models.user import User
+from app.core.dependencies import get_current_workspace, WorkspaceContext
 from app.models.product import Product
 from app.models.ai_forecast import (
     DemandForecast, StockoutPrediction, RestockingRecommendation,
@@ -29,16 +28,18 @@ def get_demand_forecasts(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),  # Reduced default limit
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    ctx: WorkspaceContext = Depends(get_current_workspace)
 ):
     """
-    Get demand forecasts (admin only).
+    Get demand forecasts (workspace-scoped).
     Returns latest forecasts per product if product_id not specified.
     Handles missing data gracefully.
     """
     from datetime import datetime, timedelta
     
-    query = db.query(DemandForecast).join(Product)
+    query = db.query(DemandForecast).join(
+        Product, DemandForecast.product_id == Product.id
+    ).filter(Product.workspace_id == ctx.workspace.id)
     
     if product_id:
         query = query.filter(DemandForecast.product_id == product_id)
@@ -86,10 +87,12 @@ def get_stockout_predictions(
     product_id: Optional[int] = Query(None),
     risk_level: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    ctx: WorkspaceContext = Depends(get_current_workspace)
 ):
-    """Get stockout predictions (admin only)"""
-    query = db.query(StockoutPrediction).join(Product)
+    """Get stockout predictions (workspace-scoped)"""
+    query = db.query(StockoutPrediction).join(
+        Product, StockoutPrediction.product_id == Product.id
+    ).filter(Product.workspace_id == ctx.workspace.id)
     
     if product_id:
         query = query.filter(StockoutPrediction.product_id == product_id)
@@ -121,10 +124,12 @@ def get_restocking_recommendations(
     product_id: Optional[int] = Query(None),
     should_restock: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    ctx: WorkspaceContext = Depends(get_current_workspace)
 ):
-    """Get restocking recommendations (admin only)"""
-    query = db.query(RestockingRecommendation).join(Product)
+    """Get restocking recommendations (workspace-scoped)"""
+    query = db.query(RestockingRecommendation).join(
+        Product, RestockingRecommendation.product_id == Product.id
+    ).filter(Product.workspace_id == ctx.workspace.id)
     
     if product_id:
         query = query.filter(RestockingRecommendation.product_id == product_id)
@@ -160,10 +165,12 @@ def get_dead_stock_detections(
     product_id: Optional[int] = Query(None),
     is_dead_stock: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    ctx: WorkspaceContext = Depends(get_current_workspace)
 ):
-    """Get dead stock detections (admin only)"""
-    query = db.query(DeadStockDetection).join(Product)
+    """Get dead stock detections (workspace-scoped)"""
+    query = db.query(DeadStockDetection).join(
+        Product, DeadStockDetection.product_id == Product.id
+    ).filter(Product.workspace_id == ctx.workspace.id)
     
     if product_id:
         query = query.filter(DeadStockDetection.product_id == product_id)
@@ -201,10 +208,17 @@ def get_ai_alerts(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    ctx: WorkspaceContext = Depends(get_current_workspace)
 ):
-    """Get AI-generated alerts (admin only)"""
-    query = db.query(AIAlert)
+    """Get AI-generated alerts (workspace-scoped)"""
+    query = db.query(AIAlert).filter(
+        (AIAlert.workspace_id == ctx.workspace.id) |
+        (
+            AIAlert.product_id.in_(
+                db.query(Product.id).filter(Product.workspace_id == ctx.workspace.id)
+            )
+        )
+    )
     
     if alert_type:
         query = query.filter(AIAlert.alert_type == alert_type)
@@ -221,7 +235,10 @@ def get_ai_alerts(
     for alert in alerts:
         product_name = None
         if alert.product_id:
-            product = db.query(Product).filter(Product.id == alert.product_id).first()
+            product = db.query(Product).filter(
+                Product.id == alert.product_id,
+                Product.workspace_id == ctx.workspace.id
+            ).first()
             product_name = product.name if product else None
         
         result.append(AIAlertResponse(
@@ -243,12 +260,21 @@ def get_ai_alerts(
 def mark_alert_read(
     alert_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    ctx: WorkspaceContext = Depends(get_current_workspace)
 ):
-    """Mark an alert as read (admin only)"""
-    alert = db.query(AIAlert).filter(AIAlert.id == alert_id).first()
+    """Mark an alert as read (workspace-scoped)"""
+    alert = db.query(AIAlert).filter(
+        AIAlert.id == alert_id,
+        (
+            (AIAlert.workspace_id == ctx.workspace.id) |
+            (
+                AIAlert.product_id.in_(
+                    db.query(Product.id).filter(Product.workspace_id == ctx.workspace.id)
+                )
+            )
+        )
+    ).first()
     if not alert:
-        from fastapi import HTTPException, status
         raise HTTPException(status_code=404, detail="Alert not found")
     
     alert.is_read = "yes"
@@ -257,7 +283,10 @@ def mark_alert_read(
     
     product_name = None
     if alert.product_id:
-        product = db.query(Product).filter(Product.id == alert.product_id).first()
+        product = db.query(Product).filter(
+            Product.id == alert.product_id,
+            Product.workspace_id == ctx.workspace.id
+        ).first()
         product_name = product.name if product else None
     
     return AIAlertResponse(
@@ -277,17 +306,19 @@ def mark_alert_read(
 def get_product_ai_insights(
     product_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    ctx: WorkspaceContext = Depends(get_current_workspace)
 ):
     """
-    Get all AI insights for a specific product (admin only).
+    Get all AI insights for a specific product (workspace-scoped).
     Returns None for missing insights (handles products with no AI data gracefully).
     Only returns insights from last 7 days to avoid stale data.
     """
     from datetime import datetime, timedelta
-    from fastapi import HTTPException, status
     
-    product = db.query(Product).filter(Product.id == product_id).first()
+    product = db.query(Product).filter(
+        Product.id == product_id,
+        Product.workspace_id == ctx.workspace.id
+    ).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     
@@ -395,11 +426,20 @@ def get_product_ai_insights(
 def trigger_batch_processing(
     product_ids: Optional[List[int]] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    ctx: WorkspaceContext = Depends(get_current_workspace)
 ):
     """
-    Manually trigger AI batch processing (admin only).
-    Normally runs as a scheduled job, but can be triggered manually for testing.
+    Manually trigger AI batch processing (workspace-scoped).
     """
-    summary = run_ai_batch_processing(db, product_ids=product_ids)
+    if product_ids:
+        # Validate all products belong to workspace
+        valid_products = db.query(Product.id).filter(
+            Product.id.in_(product_ids),
+            Product.workspace_id == ctx.workspace.id
+        ).all()
+        scoped_ids = [p[0] for p in valid_products]
+    else:
+        scoped_ids = [p[0] for p in db.query(Product.id).filter(Product.workspace_id == ctx.workspace.id).all()]
+    
+    summary = run_ai_batch_processing(db, product_ids=scoped_ids)
     return BatchProcessingSummary(**summary)

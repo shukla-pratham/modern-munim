@@ -36,18 +36,16 @@ def create_purchase_order(
     db: Session,
     vendor_id: int,
     items: List[dict],
-    promised_delivery_date: Optional[datetime] = None
+    workspace_id: int,
+    promised_delivery_date: Optional[datetime] = None,
+    is_demo: bool = False,
 ) -> PurchaseOrder:
     """
-    Create purchase order with transaction safety.
-    
-    Uses row-level locking to prevent:
-    - Concurrent inventory updates
-    - Race conditions in vendor metrics
+    Create purchase order with transaction safety and workspace isolation.
     """
     # Lock vendor for update
     vendor = lock_vendor_for_update(db, vendor_id)
-    if not vendor:
+    if not vendor or vendor.workspace_id != workspace_id:
         raise ValidationError(f"Vendor {vendor_id} not found")
     
     if not vendor.is_active:
@@ -64,7 +62,7 @@ def create_purchase_order(
         
         # Lock product for update
         product = lock_product_for_update(db, product_id)
-        if not product:
+        if not product or product.workspace_id != workspace_id:
             raise ValidationError(f"Product {product_id} not found")
         
         # Validate vendor-product relationship
@@ -88,6 +86,8 @@ def create_purchase_order(
     # Create purchase order
     po = PurchaseOrder(
         vendor_id=vendor_id,
+        workspace_id=workspace_id,
+        is_demo=is_demo,
         po_number=f"PO-{datetime.now().strftime('%Y%m%d')}-{vendor_id}-{db.query(func.max(PurchaseOrder.id)).scalar() or 0 + 1}",
         status=PurchaseOrderStatus.CREATED.value,
         total_cost=total_cost,
@@ -111,26 +111,29 @@ def create_purchase_order(
     db.commit()
     db.refresh(po)
     
-    logger.info(f"Created purchase order {po.po_number} for vendor {vendor_id}")
-    
+    logger.info(f"Created purchase order {po.po_number} for vendor {vendor_id} in workspace {workspace_id}")
     return po
 
 
 def mark_purchase_order_delivered(
     db: Session,
     purchase_order_id: int,
+    workspace_id: int,
     actual_delivery_date: Optional[datetime] = None
 ) -> PurchaseOrder:
     """
-    Mark purchase order as delivered and update inventory.
-    
-    Uses row-level locking to ensure atomic inventory updates.
+    Mark purchase order as delivered and update inventory scoped to workspace.
     """
     if actual_delivery_date is None:
         actual_delivery_date = datetime.now()
     
     # Lock purchase order for update
-    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == purchase_order_id).with_for_update().first()
+    po = (
+        db.query(PurchaseOrder)
+        .filter(PurchaseOrder.id == purchase_order_id, PurchaseOrder.workspace_id == workspace_id)
+        .with_for_update()
+        .first()
+    )
     if not po:
         raise ValidationError(f"Purchase order {purchase_order_id} not found")
     
@@ -153,7 +156,7 @@ def mark_purchase_order_delivered(
     
     for item in items:
         product = lock_product_for_update(db, item.product_id)
-        if product:
+        if product and product.workspace_id == workspace_id:
             product.stock_quantity += item.quantity
             
             # Create stock transaction
@@ -161,14 +164,16 @@ def mark_purchase_order_delivered(
             transaction = StockTransaction(
                 product_id=item.product_id,
                 quantity_change=item.quantity,
-                transaction_type=TransactionType.IN.value,
-                reason=f"Purchase order {po.po_number} delivered"
+                transaction_type=TransactionType.STOCK_IN,
+                reason=f"Purchase order {po.po_number} delivered",
+                workspace_id=workspace_id,
+                is_demo=po.is_demo,
             )
             db.add(transaction)
     
     db.commit()
     db.refresh(po)
     
-    logger.info(f"Marked purchase order {po.po_number} as delivered (delay: {delay_days} days)")
-    
+    logger.info(f"Marked purchase order {po.po_number} as delivered in workspace {workspace_id} (delay: {delay_days} days)")
     return po
+

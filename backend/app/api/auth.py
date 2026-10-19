@@ -1,13 +1,24 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_admin
 from app.core.rate_limit import is_rate_limited
 from app.models.user import User
-from app.schemas.user import UserCreate, UserResponse, Token
-from app.services.auth_service import create_user, authenticate_user, create_user_token
+from app.schemas.user import (
+    UserResponse,
+    LoginResponse,
+    AuthStartRequest,
+    AuthStartResponse,
+    AuthOnboardRequest,
+    AuthOtpVerifyRequest,
+    AuthOtpResendRequest,
+    AuthForgotPasswordRequest,
+    AuthPasswordUpdateRequest,
+    AuthStoreTypesResponse,
+)
+from app.services import admin_auth_service
 
 router = APIRouter()
 
@@ -19,30 +30,47 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register(user_data: UserCreate, db: Session = Depends(get_db)):
-    """Register a new user"""
-    user = create_user(db, user_data)
-    return user
+def _user_response(user: User, db: Session | None = None) -> UserResponse:
+    from app.services.workspace_service import is_founder_user, get_primary_membership
+    role = user.role.value if hasattr(user.role, "value") else str(user.role)
+    workspace_id = None
+    workspace_name = user.store_name
+    workspace_slug = None
+    is_demo = False
+    onboarding_completed = False
+    onboarding_step = "store_profile"
+
+    if db is not None:
+        membership = get_primary_membership(db, user.id)
+        if membership and membership.workspace:
+            ws = membership.workspace
+            workspace_id = ws.id
+            workspace_name = ws.name
+            workspace_slug = ws.slug
+            is_demo = ws.is_demo
+            onboarding_completed = ws.onboarding_completed
+            onboarding_step = ws.onboarding_step
+
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        role=role,
+        mfa_enabled=bool(user.mfa_enabled),
+        store_name=user.store_name,
+        store_type=user.store_type,
+        created_at=user.created_at,
+        workspace_id=workspace_id,
+        workspace_name=workspace_name,
+        workspace_slug=workspace_slug,
+        is_demo=is_demo,
+        is_founder=is_founder_user(user),
+        onboarding_completed=onboarding_completed,
+        onboarding_step=onboarding_step,
+    )
 
 
-@router.post("/login", response_model=Token)
-def login(
-    request: Request,
-    response: Response,
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: Session = Depends(get_db),
-):
-    """Login and get access token. Optionally sets HTTPOnly cookie when JWT_COOKIE_NAME is set."""
-    ip = _client_ip(request)
-    if is_rate_limited(f"login:{ip}", settings.RATE_LIMIT_LOGIN_PER_MINUTE, 60.0):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many login attempts. Try again later.",
-        )
-    user = authenticate_user(db, form_data.username, form_data.password)
-    access_token = create_user_token(user)
-    out = {"access_token": access_token, "token_type": "bearer"}
+
+def _set_auth_cookie(response: Response, access_token: str) -> None:
     if settings.JWT_COOKIE_NAME:
         response.set_cookie(
             key=settings.JWT_COOKIE_NAME,
@@ -52,10 +80,157 @@ def login(
             samesite="lax",
             max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )
-    return out
+
+
+@router.get("/store-types", response_model=AuthStoreTypesResponse)
+def list_store_types():
+    return AuthStoreTypesResponse(store_types=admin_auth_service.STORE_TYPES)
+
+
+@router.post("/start", response_model=AuthStartResponse)
+def auth_start(
+    body: AuthStartRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Email + password → needs_onboarding (new) or otp_sent (existing)."""
+    ip = _client_ip(request)
+    if is_rate_limited(f"auth-start:{ip}", settings.RATE_LIMIT_LOGIN_PER_MINUTE, 60.0):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many attempts. Try again later.",
+        )
+    result = admin_auth_service.start_auth(db, body.email, body.password)
+    return AuthStartResponse(**result)
+
+
+@router.post("/onboard", response_model=AuthStartResponse)
+def auth_onboard(
+    body: AuthOnboardRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """New user: create admin account with store fields, then send OTP."""
+    ip = _client_ip(request)
+    if is_rate_limited(f"auth-onboard:{ip}", settings.RATE_LIMIT_LOGIN_PER_MINUTE, 60.0):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many attempts. Try again later.",
+        )
+    result = admin_auth_service.complete_onboarding(
+        db,
+        body.email,
+        body.password,
+        body.store_name,
+        body.store_type,
+    )
+    return AuthStartResponse(**result)
+
+
+@router.post("/resend-otp", response_model=AuthStartResponse)
+def auth_resend_otp(
+    body: AuthOtpResendRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    ip = _client_ip(request)
+    if is_rate_limited(f"otp:{ip}", settings.RATE_LIMIT_LOGIN_PER_MINUTE, 60.0):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many OTP requests. Try again later.",
+        )
+    if is_rate_limited(f"otp-email:{body.email.lower()}", 5, 60.0):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many OTP requests for this email. Try again later.",
+        )
+    result = admin_auth_service.resend_otp(db, body.email)
+    return AuthStartResponse(**result)
+
+
+@router.post("/verify-otp", response_model=LoginResponse)
+def auth_verify_otp(
+    body: AuthOtpVerifyRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    """Verify email OTP and issue admin JWT session."""
+    result = admin_auth_service.verify_otp(db, body.email, body.code)
+    access_token = result["access_token"]
+    _set_auth_cookie(response, access_token)
+    return LoginResponse(
+        access_token=access_token,
+        token_type="bearer",
+        mfa_required=False,
+    )
+
+
+@router.post("/forgot-password", response_model=AuthStartResponse)
+def auth_forgot_password(
+    body: AuthForgotPasswordRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """
+    Forgot password: email → OTP only (no password).
+    After OTP verify, client is logged in and may call PATCH /password.
+    """
+    ip = _client_ip(request)
+    if is_rate_limited(f"auth-forgot:{ip}", settings.RATE_LIMIT_LOGIN_PER_MINUTE, 60.0):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many attempts. Try again later.",
+        )
+    if is_rate_limited(f"otp-email:{body.email.lower()}", 5, 60.0):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many OTP requests for this email. Try again later.",
+        )
+    result = admin_auth_service.start_forgot_password(db, body.email)
+    return AuthStartResponse(**result)
+
+
+@router.patch("/password", response_model=UserResponse)
+def auth_update_password(
+    body: AuthPasswordUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin),
+):
+    """Set a new password after an authenticated OTP login (forgot-password recovery)."""
+    user = admin_auth_service.update_password(db, current_user, body.password)
+    return _user_response(user)
+
+
+@router.post("/register", status_code=status.HTTP_400_BAD_REQUEST)
+def register_disabled():
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Use /api/auth/start and /api/auth/onboard for admin sign-in.",
+    )
+
+
+@router.post("/login", status_code=status.HTTP_400_BAD_REQUEST)
+def login_disabled():
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Use /api/auth/start → OTP verification for admin sign-in.",
+    )
+
+
+@router.post("/request-otp", status_code=status.HTTP_400_BAD_REQUEST)
+def request_otp_disabled():
+    """Legacy OTP-only endpoint — disabled."""
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="OTP-only sign-in is disabled. Use email + password via /api/auth/start.",
+    )
 
 
 @router.get("/me", response_model=UserResponse)
-def get_current_user_info(current_user: User = Depends(get_current_user)):
-    """Get current authenticated user information"""
-    return current_user
+def get_current_user_info(
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Authenticated admin profile (non-admins are rejected)."""
+    return _user_response(current_user, db=db)
+

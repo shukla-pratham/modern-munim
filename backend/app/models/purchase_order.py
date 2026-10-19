@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Numeric, ForeignKey, CheckConstraint, Index, Computed
+from sqlalchemy import Column, Integer, String, DateTime, Numeric, ForeignKey, CheckConstraint, Index, Computed, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func, case
 from sqlalchemy.dialects.postgresql import ENUM
@@ -28,6 +28,8 @@ class PurchaseOrder(Base):
     po_number = Column(String, unique=True, nullable=False, index=True)  # Purchase order number
     status = Column(String, default=PurchaseOrderStatus.CREATED.value, nullable=False, index=True)
     total_cost = Column(Numeric(10, 2), nullable=False)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True, index=True)
+    is_demo = Column(Boolean, default=False, nullable=False)
     
     # Delivery tracking
     order_date = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -47,15 +47,15 @@ export default function CinematicIntro({ onComplete }: { onComplete: () => void 
         )}
 
         {/* Logo */}
-        <div className="relative z-10 flex flex-col items-center gap-6">
+        <div className="relative z-10 flex flex-col items-center gap-5 px-6 max-w-sm sm:max-w-md text-center">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={phase >= 1 ? { opacity: 1, scale: 1 } : {}}
             transition={{ duration: 0.8, ease: 'easeOut' }}
-            className="flex items-center gap-3"
+            className="flex items-center gap-3 justify-center"
           >
             <div className="relative">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center font-bold text-xl" style={{ color: 'white' }}>
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center font-bold text-lg sm:text-xl" style={{ color: 'white' }}>
                 MM
               </div>
               <motion.div
@@ -65,16 +65,16 @@ export default function CinematicIntro({ onComplete }: { onComplete: () => void 
                 transition={{ duration: 2, repeat: Infinity }}
               />
             </div>
-            <span className="text-3xl font-bold tracking-tight" style={{ color: '#e2e8f0' }}>
+            <span className="text-2xl sm:text-3xl font-bold tracking-tight" style={{ color: '#e2e8f0' }}>
               Modern Munim
             </span>
           </motion.div>
 
           {/* Animated line */}
           <motion.div
-            className="h-px w-0"
+            className="h-px w-0 mx-auto"
             style={{ background: 'linear-gradient(90deg, transparent, #2563EB, transparent)' }}
-            animate={phase >= 2 ? { width: 200 } : {}}
+            animate={phase >= 2 ? { width: 180 } : {}}
             transition={{ duration: 0.6, ease: 'easeInOut' }}
           />
 
@@ -83,12 +83,13 @@ export default function CinematicIntro({ onComplete }: { onComplete: () => void 
             initial={{ opacity: 0, y: 10 }}
             animate={phase >= 3 ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.6 }}
-            className="text-sm font-medium tracking-[0.3em] uppercase"
-            style={{ color: '#64748b' }}
+            className="text-xs sm:text-sm font-medium tracking-[0.15em] sm:tracking-[0.25em] uppercase text-center leading-relaxed"
+            style={{ color: '#94a3b8' }}
           >
            Your One Stop Shop for all your business needs
           </motion.p>
         </div>
+
 
         {/* Skip */}
         <motion.button

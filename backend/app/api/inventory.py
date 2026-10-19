@@ -2,8 +2,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from typing import List
 from app.core.database import get_db
-from app.core.dependencies import get_current_admin
-from app.models.user import User
+from app.core.dependencies import get_current_workspace, WorkspaceContext
 from app.schemas.inventory import (
     StockInRequest, StockOutRequest, StockTransactionResponse, ThresholdUpdate
 )
@@ -19,10 +18,17 @@ router = APIRouter()
 def add_stock(
     request: StockInRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
-    """Add stock to a product (admin only)"""
-    transaction = stock_in(db, request.product_id, request.quantity, request.reason)
+    """Add stock to a product scoped to workspace."""
+    transaction = stock_in(
+        db,
+        product_id=request.product_id,
+        quantity=request.quantity,
+        workspace_id=workspace.workspace_id,
+        reason=request.reason,
+        is_demo=workspace.is_demo,
+    )
     
     return StockTransactionResponse(
         id=transaction.id,
@@ -39,10 +45,17 @@ def add_stock(
 def remove_stock(
     request: StockOutRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
-    """Remove stock from a product (admin only)"""
-    transaction = stock_out(db, request.product_id, request.quantity, request.reason)
+    """Remove stock from a product scoped to workspace."""
+    transaction = stock_out(
+        db,
+        product_id=request.product_id,
+        quantity=request.quantity,
+        workspace_id=workspace.workspace_id,
+        reason=request.reason,
+        is_demo=workspace.is_demo,
+    )
     
     return StockTransactionResponse(
         id=transaction.id,
@@ -61,10 +74,16 @@ def list_transactions(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
-    """Get stock transactions (admin only)"""
-    transactions = get_stock_transactions(db, product_id=product_id, skip=skip, limit=limit)
+    """Get stock transactions scoped to workspace."""
+    transactions = get_stock_transactions(
+        db,
+        workspace_id=workspace.workspace_id,
+        product_id=product_id,
+        skip=skip,
+        limit=limit,
+    )
     
     return [
         StockTransactionResponse(
@@ -85,7 +104,13 @@ def update_product_threshold(
     product_id: int,
     threshold_data: ThresholdUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
-    """Update stock threshold for a product (admin only)"""
-    return update_stock_threshold(db, product_id, threshold_data.stock_threshold)
+    """Update stock threshold for a product scoped to workspace."""
+    return update_stock_threshold(
+        db,
+        product_id=product_id,
+        threshold=threshold_data.stock_threshold,
+        workspace_id=workspace.workspace_id,
+    )
+

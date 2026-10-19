@@ -534,54 +534,56 @@ export default function Vendors() {
               className="fixed inset-0 bg-background/60 backdrop-blur-sm z-50"
               onClick={() => { setVendorToDelete(null); setDeleteError(null); }}
             />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-sm bg-card border border-border rounded-xl shadow-xl p-6"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3 className="font-semibold text-foreground mb-1">Delete vendor</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                Delete <strong>{vendors.find((v) => v.vendor_id === vendorToDelete)?.vendor_name ?? 'this vendor'}</strong>? This cannot be undone. Vendors with existing purchase orders cannot be deleted.
-              </p>
-              {deleteError && (
-                <p className="text-sm text-destructive mb-3">{deleteError}</p>
-              )}
-              <div className="flex gap-3 justify-end">
-                <button
-                  type="button"
-                  onClick={() => { setVendorToDelete(null); setDeleteError(null); }}
-                  className="px-4 py-2 rounded-lg border border-border bg-card text-foreground hover:bg-accent"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (vendorToDelete == null) return;
-                    setDeleting(true);
-                    setDeleteError(null);
-                    try {
-                      await vendorsAPI.delete(vendorToDelete);
-                      setVendorToDelete(null);
-                      if (selectedVendorId === vendorToDelete) setSelectedVendorId(null);
-                      fetchVendors();
-                    } catch (e: unknown) {
-                      const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to delete vendor.';
-                      setDeleteError(msg);
-                    } finally {
-                      setDeleting(false);
-                    }
-                  }}
-                  disabled={deleting}
-                  className="px-4 py-2 rounded-lg bg-destructive text-destructive-foreground font-medium hover:bg-destructive/90 disabled:opacity-50 flex items-center gap-2"
-                >
-                  {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-                  {deleting ? 'Deleting…' : 'Delete'}
-                </button>
-              </div>
-            </motion.div>
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="w-full max-w-sm bg-card border border-border rounded-xl shadow-xl p-6 pointer-events-auto"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3 className="font-semibold text-foreground mb-1">Delete vendor</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Delete <strong>{vendors.find((v) => v.vendor_id === vendorToDelete)?.vendor_name ?? 'this vendor'}</strong>? This cannot be undone. Vendors with existing purchase orders cannot be deleted.
+                </p>
+                {deleteError && (
+                  <p className="text-sm text-destructive mb-3">{deleteError}</p>
+                )}
+                <div className="flex gap-3 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => { setVendorToDelete(null); setDeleteError(null); }}
+                    className="px-4 py-2 rounded-lg border border-border bg-card text-foreground hover:bg-accent"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (vendorToDelete == null) return;
+                      setDeleting(true);
+                      setDeleteError(null);
+                      try {
+                        await vendorsAPI.delete(vendorToDelete);
+                        setVendorToDelete(null);
+                        if (selectedVendorId === vendorToDelete) setSelectedVendorId(null);
+                        fetchVendors();
+                      } catch (e: unknown) {
+                        const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Failed to delete vendor.';
+                        setDeleteError(msg);
+                      } finally {
+                        setDeleting(false);
+                      }
+                    }}
+                    disabled={deleting}
+                    className="px-4 py-2 rounded-lg bg-destructive text-destructive-foreground font-medium hover:bg-destructive/90 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    {deleting ? 'Deleting…' : 'Delete'}
+                  </button>
+                </div>
+              </motion.div>
+            </div>
           </>
         )}
       </AnimatePresence>
@@ -619,48 +621,50 @@ function AddVendorModal({ onClose, onSuccess }: { onClose: () => void; onSuccess
   return (
     <>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-background/60 backdrop-blur-sm z-50" onClick={onClose} />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-card border border-border rounded-xl shadow-xl z-50 p-6"
-      >
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-foreground">Add vendor</h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Name *</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground text-sm" required />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto pointer-events-none">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          className="relative w-full max-w-md max-h-[90vh] overflow-y-auto bg-card border border-border rounded-xl shadow-2xl p-6 pointer-events-auto my-auto"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-foreground">Add vendor</h3>
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Avg lead time (days)</label>
-            <input type="number" min="0" value={avg_lead_time_days} onChange={(e) => setAvgLeadTimeDays(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground text-sm" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Reliability (0–100)</label>
-              <input type="number" min="0" max="100" step="0.1" value={reliability_score} onChange={(e) => setReliabilityScore(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground text-sm" />
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Name *</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground text-sm" required />
             </div>
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Cost score (0–100)</label>
-              <input type="number" min="0" max="100" step="0.1" value={cost_score} onChange={(e) => setCostScore(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground text-sm" />
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Avg lead time (days)</label>
+              <input type="number" min="0" value={avg_lead_time_days} onChange={(e) => setAvgLeadTimeDays(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground text-sm" />
             </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Overall score (0–100)</label>
-            <input type="number" min="0" max="100" step="0.1" value={overall_score} onChange={(e) => setOverallScore(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground text-sm" />
-          </div>
-          {err && <p className="text-sm text-destructive">{err}</p>}
-          <div className="flex gap-2 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg border border-border text-foreground text-sm font-medium">Cancel</button>
-            <button type="submit" disabled={submitting} className="flex-1 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50">
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin inline" /> : 'Add vendor'}
-            </button>
-          </div>
-        </form>
-      </motion.div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Reliability (0–100)</label>
+                <input type="number" min="0" max="100" step="0.1" value={reliability_score} onChange={(e) => setReliabilityScore(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Cost score (0–100)</label>
+                <input type="number" min="0" max="100" step="0.1" value={cost_score} onChange={(e) => setCostScore(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground text-sm" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Overall score (0–100)</label>
+              <input type="number" min="0" max="100" step="0.1" value={overall_score} onChange={(e) => setOverallScore(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground text-sm" />
+            </div>
+            {err && <p className="text-sm text-destructive">{err}</p>}
+            <div className="flex gap-2 pt-2">
+              <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg border border-border text-foreground text-sm font-medium hover:bg-accent">Cancel</button>
+              <button type="submit" disabled={submitting} className="flex-1 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50">
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin inline" /> : 'Add vendor'}
+              </button>
+            </div>
+          </form>
+        </motion.div>
+      </div>
     </>
   );
 }
@@ -713,53 +717,55 @@ function AddProductToVendorModal({
   return (
     <>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-background/60 backdrop-blur-sm z-50" onClick={onClose} />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-card border border-border rounded-xl shadow-xl z-50 p-6"
-      >
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-foreground">Add product to {vendorName}</h3>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Product *</label>
-            <select
-              value={productId}
-              onChange={(e) => setProductId(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
-              className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground text-sm"
-            >
-              <option value="">Select product</option>
-              {products.map((p) => (
-                <option key={p.id} value={p.id}>{p.name} (₹{Number(p.price).toLocaleString()})</option>
-              ))}
-            </select>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto pointer-events-none">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.95 }}
+          className="relative w-full max-w-md max-h-[90vh] overflow-y-auto bg-card border border-border rounded-xl shadow-2xl p-6 pointer-events-auto my-auto"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-foreground">Add product to {vendorName}</h3>
+            <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-5 h-5" /></button>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Unit cost (₹) *</label>
-            <input type="number" step="0.01" min="0" value={unit_cost} onChange={(e) => setUnitCost(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground text-sm" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Min order qty *</label>
-              <input type="number" min="1" value={min_order_qty} onChange={(e) => setMinOrderQty(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground text-sm" />
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Product *</label>
+              <select
+                value={productId}
+                onChange={(e) => setProductId(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+                className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground text-sm"
+              >
+                <option value="">Select product</option>
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name} (₹{Number(p.price).toLocaleString()})</option>
+                ))}
+              </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">Lead time (days)</label>
-              <input type="number" min="0" value={lead_time_days} onChange={(e) => setLeadTimeDays(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground text-sm" />
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Unit cost (₹) *</label>
+              <input type="number" step="0.01" min="0" value={unit_cost} onChange={(e) => setUnitCost(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground text-sm" />
             </div>
-          </div>
-          {err && <p className="text-sm text-destructive">{err}</p>}
-          <div className="flex gap-2 pt-2">
-            <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg border border-border text-foreground text-sm font-medium">Cancel</button>
-            <button type="submit" disabled={submitting} className="flex-1 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50">
-              {submitting ? <Loader2 className="w-4 h-4 animate-spin inline" /> : 'Add product'}
-            </button>
-          </div>
-        </form>
-      </motion.div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Min order qty *</label>
+                <input type="number" min="1" value={min_order_qty} onChange={(e) => setMinOrderQty(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Lead time (days)</label>
+                <input type="number" min="0" value={lead_time_days} onChange={(e) => setLeadTimeDays(e.target.value)} className="w-full px-3 py-2 border border-border rounded-lg bg-background text-foreground text-sm" />
+              </div>
+            </div>
+            {err && <p className="text-sm text-destructive">{err}</p>}
+            <div className="flex gap-2 pt-2">
+              <button type="button" onClick={onClose} className="flex-1 py-2 rounded-lg border border-border text-foreground text-sm font-medium hover:bg-accent">Cancel</button>
+              <button type="submit" disabled={submitting} className="flex-1 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50">
+                {submitting ? <Loader2 className="w-4 h-4 animate-spin inline" /> : 'Add product'}
+              </button>
+            </div>
+          </form>
+        </motion.div>
+      </div>
     </>
   );
 }

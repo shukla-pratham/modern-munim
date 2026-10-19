@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Numeric, DateTime, ForeignKey, String, Enum as SQLEnum
+from sqlalchemy import Column, Integer, Numeric, DateTime, ForeignKey, String, Boolean, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
@@ -17,7 +17,18 @@ class Order(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     total_amount = Column(Numeric(10, 2), nullable=False)
-    status = Column(SQLEnum(OrderStatus), default=OrderStatus.PENDING, nullable=False)
+    status = Column(
+        SQLEnum(
+            OrderStatus,
+            name="orderstatus",
+            values_callable=lambda x: [e.value for e in x],
+            create_type=False,
+        ),
+        default=OrderStatus.PENDING,
+        nullable=False,
+    )
+    workspace_id = Column(Integer, ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=True, index=True)
+    is_demo = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships

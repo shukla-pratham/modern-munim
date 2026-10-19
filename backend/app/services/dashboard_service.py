@@ -8,12 +8,13 @@ from app.models.product import Product
 from app.models.expense import Expense, ExpenseCategory, ExpenseType
 
 
-def get_revenue_data(db: Session, days: int = 30) -> Dict:
-    """Calculate revenue data for dashboard"""
+def get_revenue_data(db: Session, workspace_id: int, days: int = 30) -> Dict:
+    """Calculate revenue data for dashboard scoped to workspace"""
     cutoff_date = datetime.utcnow() - timedelta(days=days)
     
     # Total revenue
     total_revenue_query = db.query(func.sum(Order.total_amount)).filter(
+        Order.workspace_id == workspace_id,
         Order.status == "completed",
         Order.created_at >= cutoff_date
     )
@@ -24,6 +25,7 @@ def get_revenue_data(db: Session, days: int = 30) -> Dict:
         func.date(Order.created_at).label("date"),
         func.sum(Order.total_amount).label("revenue")
     ).filter(
+        Order.workspace_id == workspace_id,
         Order.status == "completed",
         Order.created_at >= cutoff_date
     ).group_by(func.date(Order.created_at)).all()
@@ -40,11 +42,14 @@ def get_revenue_data(db: Session, days: int = 30) -> Dict:
     }
 
 
-def get_expense_breakdown(db: Session, days: int = 30) -> Dict:
-    """Calculate expense breakdown for dashboard"""
+def get_expense_breakdown(db: Session, workspace_id: int, days: int = 30) -> Dict:
+    """Calculate expense breakdown for dashboard scoped to workspace"""
     cutoff_date = datetime.utcnow() - timedelta(days=days)
     
-    expenses = db.query(Expense).filter(Expense.created_at >= cutoff_date).all()
+    expenses = db.query(Expense).filter(
+        Expense.workspace_id == workspace_id,
+        Expense.created_at >= cutoff_date,
+    ).all()
     
     total_expenses = sum(exp.amount for exp in expenses)
     
@@ -70,6 +75,7 @@ def get_expense_breakdown(db: Session, days: int = 30) -> Dict:
         extract("month", Expense.created_at).label("month"),
         func.sum(Expense.amount).label("amount")
     ).filter(
+        Expense.workspace_id == workspace_id,
         Expense.created_at >= cutoff_date
     ).group_by(
         extract("year", Expense.created_at),
@@ -89,18 +95,20 @@ def get_expense_breakdown(db: Session, days: int = 30) -> Dict:
     }
 
 
-def get_profit_data(db: Session, days: int = 30) -> Dict:
-    """Calculate profit data for dashboard"""
+def get_profit_data(db: Session, workspace_id: int, days: int = 30) -> Dict:
+    """Calculate profit data for dashboard scoped to workspace"""
     cutoff_date = datetime.utcnow() - timedelta(days=days)
     
     # Total revenue
     total_revenue = db.query(func.sum(Order.total_amount)).filter(
+        Order.workspace_id == workspace_id,
         Order.status == "completed",
         Order.created_at >= cutoff_date
     ).scalar() or Decimal("0.00")
     
     # Total expenses
     total_expenses = db.query(func.sum(Expense.amount)).filter(
+        Expense.workspace_id == workspace_id,
         Expense.created_at >= cutoff_date
     ).scalar() or Decimal("0.00")
     
@@ -121,6 +129,8 @@ def get_profit_data(db: Session, days: int = 30) -> Dict:
     ).join(
         Product, OrderItem.product_id == Product.id
     ).filter(
+        Order.workspace_id == workspace_id,
+        Product.workspace_id == workspace_id,
         Order.status == "completed",
         Order.created_at >= cutoff_date
     ).group_by(
@@ -131,6 +141,7 @@ def get_profit_data(db: Session, days: int = 30) -> Dict:
     for row in product_revenue:
         # Get expenses for this product
         product_expenses = db.query(func.sum(Expense.amount)).filter(
+            Expense.workspace_id == workspace_id,
             Expense.product_id == row.product_id,
             Expense.created_at >= cutoff_date
         ).scalar() or Decimal("0.00")
@@ -157,9 +168,9 @@ def get_profit_data(db: Session, days: int = 30) -> Dict:
     }
 
 
-def get_stock_status(db: Session) -> Dict:
-    """Get stock status for dashboard"""
-    products = db.query(Product).all()
+def get_stock_status(db: Session, workspace_id: int) -> Dict:
+    """Get stock status for dashboard scoped to workspace"""
+    products = db.query(Product).filter(Product.workspace_id == workspace_id).all()
     
     total_products = len(products)
     low_stock_products = []
@@ -194,18 +205,20 @@ def get_stock_status(db: Session) -> Dict:
     }
 
 
-def get_sales_data(db: Session, days: int = 30) -> Dict:
-    """Get sales data for dashboard"""
+def get_sales_data(db: Session, workspace_id: int, days: int = 30) -> Dict:
+    """Get sales data for dashboard scoped to workspace"""
     cutoff_date = datetime.utcnow() - timedelta(days=days)
     
     # Total sales (number of orders)
     total_sales = db.query(func.count(Order.id)).filter(
+        Order.workspace_id == workspace_id,
         Order.status == "completed",
         Order.created_at >= cutoff_date
     ).scalar() or 0
     
     # Total revenue
     total_revenue = db.query(func.sum(Order.total_amount)).filter(
+        Order.workspace_id == workspace_id,
         Order.status == "completed",
         Order.created_at >= cutoff_date
     ).scalar() or Decimal("0.00")
@@ -221,6 +234,8 @@ def get_sales_data(db: Session, days: int = 30) -> Dict:
     ).join(
         Product, OrderItem.product_id == Product.id
     ).filter(
+        Order.workspace_id == workspace_id,
+        Product.workspace_id == workspace_id,
         Order.status == "completed",
         Order.created_at >= cutoff_date
     ).group_by(
@@ -243,6 +258,7 @@ def get_sales_data(db: Session, days: int = 30) -> Dict:
         func.count(Order.id).label("orders"),
         func.sum(Order.total_amount).label("revenue")
     ).filter(
+        Order.workspace_id == workspace_id,
         Order.status == "completed",
         Order.created_at >= cutoff_date
     ).group_by(
@@ -264,3 +280,4 @@ def get_sales_data(db: Session, days: int = 30) -> Dict:
         "sales_by_product": sales_by_product_list,
         "sales_over_time": sales_over_time_list
     }
+

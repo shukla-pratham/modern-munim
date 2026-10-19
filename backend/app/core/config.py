@@ -23,6 +23,17 @@ class Settings(BaseSettings):
     AI_BATCH_JOB_TIMEOUT_HOURS: int = Field(default=2, ge=1, description="Hours before job is considered stale")
     RATE_LIMIT_LOGIN_PER_MINUTE: int = Field(default=10, ge=1, le=120, description="Max login attempts per IP per minute")
     JWT_COOKIE_NAME: str = Field(default="", description="If set, login also sets an HTTPOnly cookie with the token")
+    # Gmail / SMTP for email OTP (use a Google App Password, not your normal password)
+    SMTP_HOST: str = Field(default="smtp.gmail.com", description="SMTP host")
+    SMTP_PORT: int = Field(default=587, ge=1, le=65535, description="SMTP port")
+    SMTP_USER: str = Field(default="", description="SMTP username (your Gmail address)")
+    SMTP_PASSWORD: str = Field(default="", description="SMTP password / Gmail App Password")
+    SMTP_FROM: str = Field(default="", description="From address (defaults to SMTP_USER)")
+    EMAIL_OTP_EXPIRE_MINUTES: int = Field(default=10, ge=1, le=60, description="Email OTP lifetime")
+    EMAIL_OTP_DEV_LOG: bool = Field(
+        default=True,
+        description="Log OTP codes to server logs in development when SMTP is missing or for debugging",
+    )
 
     @validator("CORS_ORIGINS", pre=True)
     def parse_cors_origins(cls, v):
@@ -60,6 +71,20 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+
+
+def enforce_production_mail(settings_obj) -> None:
+    """Production must email OTPs and must not log them."""
+    if getattr(settings_obj, "ENVIRONMENT", "") != "production":
+        return
+    if not getattr(settings_obj, "SMTP_USER", "") or not getattr(settings_obj, "SMTP_PASSWORD", ""):
+        raise ValueError(
+            "SMTP_USER and SMTP_PASSWORD are required in production so login OTPs can be emailed."
+        )
+    if getattr(settings_obj, "EMAIL_OTP_DEV_LOG", False):
+        raise ValueError(
+            "EMAIL_OTP_DEV_LOG must be false in production. OTPs must not be written to logs."
+        )
 
 
 def _validate_production():
@@ -119,6 +144,7 @@ if settings.ENVIRONMENT == "production":
         raise ValueError("SECRET_KEY is required in production and must be at least 32 characters.")
     if settings.DEBUG:
         raise ValueError("DEBUG must be False in production.")
+    enforce_production_mail(settings)
     origins = settings.get_cors_origins_list()
     if "*" in origins or not origins:
         raise ValueError("CORS_ORIGINS in production must be a non-empty list of explicit origins. No wildcards.")

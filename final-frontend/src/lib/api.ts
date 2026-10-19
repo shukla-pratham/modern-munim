@@ -1,22 +1,26 @@
 import axios from 'axios';
 
-const rawApiUrl = import.meta.env.VITE_API_URL as string | undefined;
-if (import.meta.env.PROD && (!rawApiUrl || !rawApiUrl.startsWith('http'))) {
-  throw new Error('VITE_API_URL must be set to the backend API URL in production (e.g. https://api.example.com).');
-}
-export const API_URL = import.meta.env.DEV ? (rawApiUrl ?? 'http://localhost:8000') : rawApiUrl!;
-const baseURL = import.meta.env.DEV ? '' : rawApiUrl!;
+const rawApiUrl = (import.meta.env.VITE_API_URL as string | undefined) ?? '';
+export const API_URL = import.meta.env.DEV ? (rawApiUrl || 'http://localhost:8000') : (rawApiUrl || window.location.origin);
+const baseURL = rawApiUrl;
 
 const api = axios.create({
   baseURL,
-  timeout: 10000,
+  // Auth OTP send can wait on SMTP; keep slightly above backend SMTP timeout.
+  timeout: 20000,
   headers: { 'Content-Type': 'application/json' },
 });
 
 const getToken = () => localStorage.getItem('access_token');
+const getActiveWorkspaceId = () => localStorage.getItem('active_workspace_id');
+
 api.interceptors.request.use((config) => {
   const token = getToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  const workspaceId = getActiveWorkspaceId();
+  if (workspaceId) {
+    config.headers['X-Workspace-Id'] = workspaceId;
+  }
   return config;
 });
 api.interceptors.response.use(
@@ -30,27 +34,136 @@ api.interceptors.response.use(
   }
 );
 
+export interface AuthUser {
+  id: number;
+  email: string;
+  role: string;
+  mfa_enabled?: boolean;
+  store_name?: string | null;
+  store_type?: string | null;
+}
+
+export interface LoginResponse {
+  access_token?: string;
+  token_type?: string;
+  mfa_required?: boolean;
+  mfa_token?: string;
+}
+
+export interface AuthStartResponse {
+  status: 'needs_onboarding' | 'otp_sent';
+  email: string;
+  message: string;
+}
+
 export const authAPI = {
-  login: (email: string, password: string) => {
-    const form = new URLSearchParams();
-    form.append('username', email);
-    form.append('password', password);
-    return api.post<{ access_token: string; token_type: string }>('/api/auth/login', form, {
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    });
-  },
-  register: (email: string, password: string) =>
-    api.post('/api/auth/register', { email, password, role: 'admin' }),
-  getMe: () => api.get<{ id: number; email: string; role: string }>('/api/auth/me'),
+  start: (email: string, password: string) =>
+    api.post<AuthStartResponse>('/api/auth/start', { email, password }),
+  onboard: (email: string, password: string, store_name: string, store_type: string) =>
+    api.post<AuthStartResponse>('/api/auth/onboard', {
+      email,
+      password,
+      store_name,
+      store_type,
+    }),
+  forgotPassword: (email: string) =>
+    api.post<AuthStartResponse>('/api/auth/forgot-password', { email }),
+  resendOtp: (email: string) =>
+    api.post<AuthStartResponse>('/api/auth/resend-otp', { email }),
+  verifyOtp: (email: string, code: string) =>
+    api.post<LoginResponse>('/api/auth/verify-otp', { email, code }),
+  updatePassword: (password: string) =>
+    api.patch<AuthUser>('/api/auth/password', { password }),
+  getMe: () => api.get<AuthUser>('/api/auth/me'),
+  storeTypes: () => api.get<{ store_types: string[] }>('/api/auth/store-types'),
 };
 
 export const dashboardAPI = {
-  revenue: (days = 30) => api.get('/api/dashboard/revenue', { params: { days } }),
-  expenses: (days = 30) => api.get('/api/dashboard/expenses', { params: { days } }),
-  profit: (days = 30) => api.get('/api/dashboard/profit', { params: { days } }),
-  stockStatus: () => api.get('/api/dashboard/stock-status'),
-  sales: (days = 30) => api.get('/api/dashboard/sales', { params: { days } }),
+  revenue: (days = 30) =>
+    api.get<DashboardRevenueResponse>('/api/dashboard/revenue', { params: { days } }),
+  expenses: (days = 30) =>
+    api.get<DashboardExpenseBreakdownResponse>('/api/dashboard/expenses', { params: { days } }),
+  profit: (days = 30) =>
+    api.get<DashboardProfitResponse>('/api/dashboard/profit', { params: { days } }),
+  stockStatus: () =>
+    api.get<DashboardStockStatusResponse>('/api/dashboard/stock-status'),
+  sales: (days = 30) =>
+    api.get<DashboardSalesResponse>('/api/dashboard/sales', { params: { days } }),
 };
+
+export interface DashboardDailyRevenue {
+  date: string;
+  revenue: number;
+}
+
+export interface DashboardRevenueResponse {
+  total_revenue: number;
+  period: string;
+  daily_revenue: DashboardDailyRevenue[];
+}
+
+export interface DashboardMonthlyExpense {
+  month: string;
+  amount: number;
+}
+
+export interface DashboardExpenseBreakdownResponse {
+  total_expenses: number;
+  by_category: Record<string, number>;
+  by_type: Record<string, number>;
+  monthly_expenses: DashboardMonthlyExpense[];
+}
+
+export interface DashboardProductProfit {
+  product_id: number;
+  product_name: string;
+  revenue: number;
+  expenses: number;
+  profit: number;
+  margin: number;
+}
+
+export interface DashboardProfitResponse {
+  total_revenue: number;
+  total_expenses: number;
+  net_profit: number;
+  profit_margin: number;
+  profit_by_product: DashboardProductProfit[];
+}
+
+export interface DashboardStockProduct {
+  product_id: number;
+  name: string;
+  stock_quantity: number;
+  threshold: number;
+}
+
+export interface DashboardStockStatusResponse {
+  total_products: number;
+  low_stock_products: DashboardStockProduct[];
+  out_of_stock_products: DashboardStockProduct[];
+  stock_value: number;
+}
+
+export interface DashboardProductSales {
+  product_id: number;
+  name: string;
+  quantity_sold: number;
+  revenue: number;
+}
+
+export interface DashboardSalesOverTime {
+  date: string;
+  orders: number;
+  revenue: number;
+}
+
+export interface DashboardSalesResponse {
+  total_sales: number;
+  total_revenue: number;
+  sales_by_product: DashboardProductSales[];
+  sales_over_time: DashboardSalesOverTime[];
+}
 
 export const aiAPI = {
   alerts: (params?: { skip?: number; limit?: number }) => api.get('/api/ai/alerts', { params }),
@@ -123,7 +236,13 @@ export const purchaseOrdersAPI = {
     api.post<PurchaseOrderResponse>('/api/purchase-orders', body),
   list: (params?: { vendor_id?: number }) =>
     api.get<PurchaseOrderResponse[]>('/api/purchase-orders', { params }),
+  // SPA has no receiving UI. When VITE_USE_SPRING_PRODUCTS=true, Vite sends
+  // create/list/deliver under /api/purchase-orders to Spring.
 };
+
+// Customer /api/orders is Spring-migrated (with ledger) but unused by the SPA.
+// TASK 18: no Orders UI exists in current or legacy frontends in this repo.
+// Do not add ordersAPI unless an Orders UI / intentional cutover is approved.
 
 // Products (SKUs)
 export interface ProductCreate {
@@ -187,6 +306,8 @@ export interface VendorProductCreate {
   lead_time_days?: number;
 }
 
+export type VendorProductResponse = VendorProduct;
+
 export const vendorsCreateAPI = {
   create: (body: VendorCreate) =>
     api.post<VendorCreateResponse>('/api/vendors', body),
@@ -194,4 +315,81 @@ export const vendorsCreateAPI = {
     api.post<VendorProductResponse>(`/api/vendors/${vendorId}/products`, body),
 };
 
+export interface ExpenseResponse {
+  id: number;
+  category: string;
+  description: string;
+  amount: number;
+  expense_type: string;
+  product_id: number | null;
+  product_name: string | null;
+  created_at: string;
+}
+
+export interface ExpenseCreate {
+  category: string;
+  description: string;
+  amount: number;
+  expense_type?: string;
+  product_id?: number | null;
+}
+
+export interface ExpenseUpdate {
+  category?: string;
+  description?: string;
+  amount?: number;
+  expense_type?: string;
+  product_id?: number;
+}
+
+export const expensesAPI = {
+  list: (params?: { skip?: number; limit?: number; category?: string; product_id?: number }) =>
+    api.get<ExpenseResponse[]>('/api/expenses', { params: { limit: 100, ...params } }),
+  create: (body: ExpenseCreate) =>
+    api.post<ExpenseResponse>('/api/expenses', body),
+  update: (id: number, body: ExpenseUpdate) =>
+    api.put<ExpenseResponse>(`/api/expenses/${id}`, body),
+  delete: (id: number) =>
+    api.delete(`/api/expenses/${id}`),
+};
+
+export interface WorkspaceResponse {
+  id: number;
+  name: string;
+  slug: string;
+  store_type?: string | null;
+  is_demo: boolean;
+  onboarding_completed: boolean;
+  onboarding_step: string;
+  role: string;
+  created_at: string;
+}
+
+export interface WorkspaceSummaryResponse {
+  active_workspace: WorkspaceResponse | null;
+  workspaces: WorkspaceResponse[];
+  is_founder: boolean;
+}
+
+export interface WorkspaceCreate {
+  name: string;
+  store_type?: string;
+}
+
+export interface WorkspaceDeleteRequest {
+  password: string;
+  otp: string;
+}
+
+export const workspacesAPI = {
+  getCurrent: () => api.get<WorkspaceResponse>('/api/workspaces/current'),
+  getSummary: () => api.get<WorkspaceSummaryResponse>('/api/workspaces/summary'),
+  create: (data: WorkspaceCreate) => api.post<WorkspaceResponse>('/api/workspaces', data),
+  requestDeleteOtp: (workspaceId: number) =>
+    api.post<{ message: string; email: string }>(`/api/workspaces/${workspaceId}/request-delete-otp`),
+  delete: (workspaceId: number, data: { password: string; otp: string }) =>
+    api.post<{ message: string; deleted_id: number }>(`/api/workspaces/${workspaceId}/delete`, data),
+};
+
 export default api;
+

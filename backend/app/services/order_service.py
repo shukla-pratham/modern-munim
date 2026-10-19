@@ -13,9 +13,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def create_order(db: Session, user_id: int, order_data: OrderCreate) -> Order:
+def create_order(db: Session, user_id: int, workspace_id: int, order_data: OrderCreate, is_demo: bool = False) -> Order:
     """
-    Create a new order with order items.
+    Create a new order with order items scoped to the user's workspace.
     Uses database transactions and row-level locking to prevent race conditions.
     """
     # Validate input
@@ -36,7 +36,7 @@ def create_order(db: Session, user_id: int, order_data: OrderCreate) -> Order:
             
             # Lock product for update (prevents race conditions)
             product = lock_product_for_update(db, item_data.product_id)
-            if not product:
+            if not product or product.workspace_id != workspace_id:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Product {item_data.product_id} not found"
@@ -81,6 +81,8 @@ def create_order(db: Session, user_id: int, order_data: OrderCreate) -> Order:
         # Create order
         db_order = Order(
             user_id=user_id,
+            workspace_id=workspace_id,
+            is_demo=is_demo,
             total_amount=total_amount,
             status=OrderStatus.COMPLETED,  # Simulated checkout - auto-complete
             items=order_items
@@ -89,18 +91,25 @@ def create_order(db: Session, user_id: int, order_data: OrderCreate) -> Order:
         # Transaction commits automatically via context manager
     
     db.refresh(db_order)
-    logger.info(f"Order {db_order.id} created for user {user_id} with {len(order_items)} items")
+    logger.info(f"Order {db_order.id} created for user {user_id} in workspace {workspace_id} with {len(order_items)} items")
     return db_order
 
 
-def get_user_orders(db: Session, user_id: int, skip: int = 0, limit: int = 100) -> List[Order]:
-    """Get all orders for a user"""
-    return db.query(Order).filter(Order.user_id == user_id).order_by(Order.created_at.desc()).offset(skip).limit(limit).all()
+def get_user_orders(db: Session, user_id: int, workspace_id: int, skip: int = 0, limit: int = 100) -> List[Order]:
+    """Get all orders for a user within an authorized workspace"""
+    return (
+        db.query(Order)
+        .filter(Order.user_id == user_id, Order.workspace_id == workspace_id)
+        .order_by(Order.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
 
 
-def get_order(db: Session, order_id: int, user_id: int = None) -> Order:
-    """Get a single order by ID (optionally filtered by user)"""
-    query = db.query(Order).filter(Order.id == order_id)
+def get_order(db: Session, order_id: int, workspace_id: int, user_id: int = None) -> Order:
+    """Get a single order by ID scoped to workspace"""
+    query = db.query(Order).filter(Order.id == order_id, Order.workspace_id == workspace_id)
     if user_id:
         query = query.filter(Order.user_id == user_id)
     
@@ -113,6 +122,14 @@ def get_order(db: Session, order_id: int, user_id: int = None) -> Order:
     return order
 
 
-def get_all_orders(db: Session, skip: int = 0, limit: int = 100) -> List[Order]:
-    """Get all orders (admin only)"""
-    return db.query(Order).order_by(Order.created_at.desc()).offset(skip).limit(limit).all()
+def get_all_orders(db: Session, workspace_id: int, skip: int = 0, limit: int = 100) -> List[Order]:
+    """Get all orders scoped to the caller's authorized workspace"""
+    return (
+        db.query(Order)
+        .filter(Order.workspace_id == workspace_id)
+        .order_by(Order.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+

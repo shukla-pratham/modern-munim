@@ -1,0 +1,19 @@
+# Local staging ports only. Production mappings stay in docker-compose.yml.
+# Does not publish Spring, and does not attach to the host PostgreSQL instance.
+#
+# docker compose -p modernmunim-staging \
+#   -f docker-compose.yml -f docker-compose.staging.yml \
+#   up -d --build
+services:
+  postgres:
+    volumes: !override
+      - staging_postgres_data:/var/lib/postgresql/data
+  backend:
+    ports: !override
+      - "127.0.0.1:18000:8000"
+  frontend:
+    ports: !override
+      - "127.0.0.1:8088:80"
+
+volumes:
+  staging_postgres_data:

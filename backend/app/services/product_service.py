@@ -8,6 +8,7 @@ from app.schemas.product import ProductCreate, ProductUpdate
 
 def get_products(
     db: Session,
+    workspace_id: int,
     skip: int = 0,
     limit: int = 100,
     search: Optional[str] = None,
@@ -15,8 +16,8 @@ def get_products(
     max_price: Optional[float] = None,
     in_stock_only: bool = False
 ) -> List[Product]:
-    """Get products with optional filtering"""
-    query = db.query(Product)
+    """Get products scoped to the authorized workspace with optional filtering"""
+    query = db.query(Product).filter(Product.workspace_id == workspace_id)
     
     # Search filter
     if search:
@@ -40,9 +41,12 @@ def get_products(
     return query.offset(skip).limit(limit).all()
 
 
-def get_product(db: Session, product_id: int) -> Product:
-    """Get a single product by ID"""
-    product = db.query(Product).filter(Product.id == product_id).first()
+def get_product(db: Session, product_id: int, workspace_id: int) -> Product:
+    """Get a single product by ID scoped to workspace"""
+    product = db.query(Product).filter(
+        Product.id == product_id,
+        Product.workspace_id == workspace_id,
+    ).first()
     if not product:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -51,20 +55,25 @@ def get_product(db: Session, product_id: int) -> Product:
     return product
 
 
-def create_product(db: Session, product_data: ProductCreate) -> Product:
-    """Create a new product"""
-    db_product = Product(**product_data.dict())
+def create_product(db: Session, product_data: ProductCreate, workspace_id: int, is_demo: bool = False) -> Product:
+    """Create a new product scoped to workspace"""
+    payload = product_data.dict() if hasattr(product_data, "dict") else product_data.model_dump()
+    payload["workspace_id"] = workspace_id
+    payload["is_demo"] = is_demo
+    db_product = Product(**payload)
     db.add(db_product)
     db.commit()
     db.refresh(db_product)
     return db_product
 
 
-def update_product(db: Session, product_id: int, product_data: ProductUpdate) -> Product:
-    """Update an existing product"""
-    product = get_product(db, product_id)
+def update_product(db: Session, product_id: int, product_data: ProductUpdate, workspace_id: int) -> Product:
+    """Update an existing product scoped to workspace"""
+    product = get_product(db, product_id, workspace_id=workspace_id)
     
-    update_data = product_data.dict(exclude_unset=True)
+    update_data = product_data.dict(exclude_unset=True) if hasattr(product_data, "dict") else product_data.model_dump(exclude_unset=True)
+    update_data.pop("workspace_id", None)
+    update_data.pop("is_demo", None)
     for field, value in update_data.items():
         setattr(product, field, value)
     
@@ -73,8 +82,9 @@ def update_product(db: Session, product_id: int, product_data: ProductUpdate) ->
     return product
 
 
-def delete_product(db: Session, product_id: int) -> None:
-    """Delete a product"""
-    product = get_product(db, product_id)
+def delete_product(db: Session, product_id: int, workspace_id: int) -> None:
+    """Delete a product scoped to workspace"""
+    product = get_product(db, product_id, workspace_id=workspace_id)
     db.delete(product)
     db.commit()
+

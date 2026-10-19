@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Development only: start backend and frontend for FF Marketplace.
 # Backend: http://127.0.0.1:8000  |  Frontend: http://localhost:3000
-# For production use: docker compose up -d --build (see DEPLOY.md).
+# For production use: docker compose up -d --build (see docs/deployment/DEPLOY.md).
 
 set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"

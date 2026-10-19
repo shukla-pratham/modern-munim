@@ -4,7 +4,10 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from app.core.config import settings
-from app.api import auth, products, orders, inventory, expenses, dashboard, ai_insights, vendors, purchase_orders
+from app.api import (
+    auth, products, orders, inventory, expenses, dashboard,
+    ai_insights, vendors, purchase_orders, workspaces
+)
 from app.core.middleware import (
     validation_exception_handler,
     http_exception_handler,
@@ -48,6 +51,7 @@ app.add_exception_handler(Exception, general_exception_handler)
 
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(workspaces.router, prefix="/api/workspaces", tags=["workspaces"])
 app.include_router(products.router, prefix="/api/products", tags=["products"])
 app.include_router(orders.router, prefix="/api/orders", tags=["orders"])
 app.include_router(inventory.router, prefix="/api/inventory", tags=["inventory"])
@@ -77,8 +81,9 @@ def health_check():
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         db_status = "healthy"
-    except Exception as e:
-        db_status = f"unhealthy: {str(e)}"
+    except Exception:
+        logger.exception("Database health check failed")
+        db_status = "unhealthy"
     
     return {
         "status": "healthy" if db_status == "healthy" else "degraded",

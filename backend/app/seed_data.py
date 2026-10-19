@@ -12,7 +12,6 @@ from app.models.purchase_order import PurchaseOrder, PurchaseOrderItem, Purchase
 from app.models.inventory_snapshot import InventorySnapshot
 from app.models.stock_transaction import StockTransaction, TransactionType
 from app.models.order import Order, OrderItem, OrderStatus
-from app.core.security import get_password_hash
 from decimal import Decimal
 from datetime import datetime, timedelta
 
@@ -23,48 +22,14 @@ db: Session = SessionLocal()
 
 
 def seed_users():
-    """Create B2B users: admin, manager, and internal users"""
-    # Admin user
-    admin = db.query(User).filter(User.email == "admin@marketplace.com").first()
-    if not admin:
-        admin = User(
-            email="admin@marketplace.com",
-            password_hash=get_password_hash("admin123"),
-            role=UserRole.ADMIN
-        )
-        db.add(admin)
-        print("Created admin user: admin@marketplace.com / admin123")
-    
-    # Manager user (B2B)
-    manager = db.query(User).filter(User.email == "manager@marketplace.com").first()
-    if not manager:
-        manager = User(
-            email="manager@marketplace.com",
-            password_hash=get_password_hash("manager123"),
-            role=UserRole.MANAGER
-        )
-        db.add(manager)
-        print("Created manager user: manager@marketplace.com / manager123")
-    
-    # Internal users (for orders/records)
-    internal_users = [
-        ("ops@marketplace.com", "ops123", UserRole.CUSTOMER),
-        ("sales@marketplace.com", "sales123", UserRole.CUSTOMER),
-        ("abcd@fufu.com", "1234567890", UserRole.CUSTOMER),
-    ]
-    
-    for email, password, role in internal_users:
-        user = db.query(User).filter(User.email == email).first()
-        if not user:
-            user = User(
-                email=email,
-                password_hash=get_password_hash(password),
-                role=role
-            )
-            db.add(user)
-            print(f"Created internal user: {email} / {password}")
-    
-    db.commit()
+    """
+    Intentionally does NOT create demo/mock users.
+    Admin accounts are created only through /api/auth/start → onboard → OTP.
+    """
+    print(
+        "Skipping user seed: no demo accounts. "
+        "Create an admin via the app sign-in / onboarding flow."
+    )
 
 
 def seed_products():
@@ -621,11 +586,7 @@ def main():
     print("-" * 50)
     
     print("\nB2B seed data generation completed!")
-    print("\nDemo credentials:")
-    print("Admin: admin@marketplace.com / admin123")
-    print("Manager: manager@marketplace.com / manager123")
-    print("Ops: ops@marketplace.com / ops123")
-    print("Customer: abcd@fufu.com / 1234567890")
+    print("No demo user credentials — create an admin via email + password + OTP onboarding.")
 
 
 if __name__ == "__main__":

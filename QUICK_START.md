@@ -45,13 +45,11 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 alembic revision --autogenerate -m "Initial migration"
 alembic upgrade head
 
-# Seed demo data (optional)
+# Seed catalog/ops demo data (optional — does NOT create users)
 python -m app.seed_data
 ```
 
-**Demo Credentials** (from seed data):
-- Admin: `admin@marketplace.com` / `admin123`
-- Customer: `abcd@fufu.com` / `1234567890`
+**Authentication:** admin-only. No demo credentials. Sign in at the SPA with email → password → (store onboarding if new) → email OTP → JWT session.
 
 ---
 
@@ -104,7 +102,7 @@ Frontend runs at: `http://localhost:3000`
 2. **Frontend**: Visit `http://localhost:3000`
    - Should redirect to login page
 
-3. **Login**: Use demo credentials above
+3. **Login**: Create/sign in as admin via email + password + OTP (no seeded accounts)
 
 ---
 
@@ -147,9 +145,9 @@ Frontend runs at: `http://localhost:3000`
 
 ## 📚 Next Steps
 
-- Read `CONFIGURATION.md` for detailed configuration guide
+- Read `docs/guides/CONFIGURATION.md` for detailed configuration guide
 - Read `README.md` for full documentation
-- Read `DEPLOYMENT_CHECKLIST.md` for production deployment
+- Read `docs/deployment/DEPLOYMENT_CHECKLIST.md` for production deployment
 
 ---
 

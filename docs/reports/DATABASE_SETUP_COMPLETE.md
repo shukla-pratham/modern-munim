@@ -84,15 +84,13 @@ alembic upgrade head
 ### 5️⃣ Seed Data (READY)
 
 **B2B Seed Data Includes:**
-- Admin user: `admin@marketplace.com` / `admin123`
-- Manager user: `manager@marketplace.com` / `manager123`
-- Internal users: `ops@marketplace.com`, `sales@marketplace.com`
+- **No demo users** (admins are created only via SPA auth: email → password → onboarding if new → OTP)
 - 10 sample products
 - Expenses (inventory, operations, marketing)
 - Suppliers (3 suppliers with lead times)
 - Purchase orders (with items)
 - Inventory snapshots (7 days of data)
-- Internal order records
+- Internal order records (only if customer-role users already exist)
 
 **To run seed data:**
 ```bash

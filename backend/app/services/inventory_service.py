@@ -11,9 +11,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def stock_in(db: Session, product_id: int, quantity: int, reason: str = "Manual restock") -> StockTransaction:
+def stock_in(db: Session, product_id: int, quantity: int, workspace_id: int, reason: str = "Manual restock", is_demo: bool = False) -> StockTransaction:
     """
-    Add stock to a product.
+    Add stock to a product scoped to workspace.
     Uses transaction and locking to ensure data integrity.
     """
     # Validate input
@@ -24,7 +24,7 @@ def stock_in(db: Session, product_id: int, quantity: int, reason: str = "Manual 
     with db_transaction(db):
         # Lock product for update
         product = lock_product_for_update(db, product_id)
-        if not product:
+        if not product or product.workspace_id != workspace_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Product {product_id} not found"
@@ -43,19 +43,21 @@ def stock_in(db: Session, product_id: int, quantity: int, reason: str = "Manual 
             product_id=product_id,
             quantity_change=quantity,
             transaction_type=TransactionType.STOCK_IN,
-            reason=reason
+            reason=reason,
+            workspace_id=workspace_id,
+            is_demo=is_demo,
         )
         db.add(transaction)
         # Transaction commits automatically
     
     db.refresh(transaction)
-    logger.info(f"Stock in: Product {product_id}, Quantity: {quantity}, New stock: {product.stock_quantity}")
+    logger.info(f"Stock in: Product {product_id}, Quantity: {quantity}, New stock: {product.stock_quantity} in workspace {workspace_id}")
     return transaction
 
 
-def stock_out(db: Session, product_id: int, quantity: int, reason: str = "Sale") -> StockTransaction:
+def stock_out(db: Session, product_id: int, quantity: int, workspace_id: int, reason: str = "Sale", is_demo: bool = False) -> StockTransaction:
     """
-    Remove stock from a product.
+    Remove stock from a product scoped to workspace.
     Uses transaction and locking to prevent negative stock.
     """
     # Validate input
@@ -66,7 +68,7 @@ def stock_out(db: Session, product_id: int, quantity: int, reason: str = "Sale")
     with db_transaction(db):
         # Lock product for update
         product = lock_product_for_update(db, product_id)
-        if not product:
+        if not product or product.workspace_id != workspace_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Product {product_id} not found"
@@ -97,29 +99,32 @@ def stock_out(db: Session, product_id: int, quantity: int, reason: str = "Sale")
             product_id=product_id,
             quantity_change=-quantity,
             transaction_type=TransactionType.STOCK_OUT,
-            reason=reason
+            reason=reason,
+            workspace_id=workspace_id,
+            is_demo=is_demo,
         )
         db.add(transaction)
         # Transaction commits automatically
     
     db.refresh(transaction)
-    logger.info(f"Stock out: Product {product_id}, Quantity: {quantity}, New stock: {product.stock_quantity}")
+    logger.info(f"Stock out: Product {product_id}, Quantity: {quantity}, New stock: {product.stock_quantity} in workspace {workspace_id}")
     return transaction
 
 
-def get_stock_transactions(db: Session, product_id: int = None, skip: int = 0, limit: int = 100) -> List[StockTransaction]:
-    """Get stock transactions, optionally filtered by product"""
-    query = db.query(StockTransaction)
+def get_stock_transactions(db: Session, workspace_id: int, product_id: int = None, skip: int = 0, limit: int = 100) -> List[StockTransaction]:
+    """Get stock transactions scoped to authorized workspace, optionally filtered by product"""
+    query = db.query(StockTransaction).filter(StockTransaction.workspace_id == workspace_id)
     if product_id:
         query = query.filter(StockTransaction.product_id == product_id)
     
     return query.order_by(StockTransaction.created_at.desc()).offset(skip).limit(limit).all()
 
 
-def update_stock_threshold(db: Session, product_id: int, threshold: int) -> Product:
-    """Update stock threshold for a product"""
-    product = get_product(db, product_id)
+def update_stock_threshold(db: Session, product_id: int, threshold: int, workspace_id: int) -> Product:
+    """Update stock threshold for a product scoped to workspace"""
+    product = get_product(db, product_id, workspace_id=workspace_id)
     product.stock_threshold = threshold
     db.commit()
     db.refresh(product)
     return product
+

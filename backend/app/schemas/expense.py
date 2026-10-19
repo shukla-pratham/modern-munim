@@ -5,7 +5,7 @@ from decimal import Decimal
 
 
 class ExpenseCreate(BaseModel):
-    category: str  # inventory, operations, marketing
+    category: str  # inventory, operations, marketing, salary, miscellaneous
     description: str
     amount: Decimal
     expense_type: str = "one_time"  # one_time, recurring

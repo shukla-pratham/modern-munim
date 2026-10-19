@@ -3,6 +3,9 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 echo "═══════════════════════════════════════════════════════"
 echo "🚀 Setting up Local PostgreSQL Database"
 echo "═══════════════════════════════════════════════════════"
@@ -63,7 +66,7 @@ echo ""
 
 # Update .env file
 echo "📝 Updating backend/.env file..."
-cd backend
+cd "$REPO_ROOT/backend"
 
 # Get current username as fallback
 CURRENT_USER=$(whoami)

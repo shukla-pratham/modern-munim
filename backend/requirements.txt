@@ -11,8 +11,11 @@ pydantic==2.5.0
 pydantic-settings==2.1.0
 python-dotenv==1.0.0
 email-validator==2.1.0  # Required for pydantic email validation
+pyotp==2.9.0
+qrcode==8.0
 # ML/AI libraries (Phase 2)
 prophet==1.1.5  # Optional: Falls back to simple forecasting if unavailable
 pandas==2.1.4
 numpy==1.26.2
 # Removed unused dependencies: scikit-learn, statsmodels
+certifi>=2024.2.2

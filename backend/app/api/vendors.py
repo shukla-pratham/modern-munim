@@ -10,8 +10,7 @@ from typing import List, Optional
 from decimal import Decimal
 from datetime import datetime, timedelta
 from app.core.database import get_db
-from app.core.dependencies import get_current_admin
-from app.models.user import User
+from app.core.dependencies import get_current_workspace, WorkspaceContext
 from app.models.vendor import Vendor, VendorProduct, VendorPerformanceMetric
 from app.models.product import Product
 from app.models.purchase_order import PurchaseOrder, PurchaseOrderStatus
@@ -121,14 +120,38 @@ class VendorCreateResponse(BaseModel):
         from_attributes = True
 
 
+@router.get("", response_model=List[VendorCreateResponse])
+def list_vendors(
+    db: Session = Depends(get_db),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
+):
+    """List all vendors scoped to the authorized workspace."""
+    vendors = db.query(Vendor).filter(Vendor.workspace_id == workspace.workspace_id).order_by(Vendor.name.asc()).all()
+    return [
+        VendorCreateResponse(
+            id=v.id,
+            name=v.name,
+            is_active=v.is_active,
+            avg_lead_time_days=v.avg_lead_time_days,
+            reliability_score=_to_float(v.reliability_score),
+            cost_score=_to_float(v.cost_score),
+            overall_score=_to_float(v.overall_score),
+        )
+        for v in vendors
+    ]
+
+
 @router.post("", response_model=VendorCreateResponse, status_code=201)
 def create_vendor(
     body: VendorCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
-    """Create a new vendor (admin)."""
-    existing = db.query(Vendor).filter(Vendor.name == body.name).first()
+    """Create a new vendor scoped to workspace."""
+    existing = db.query(Vendor).filter(
+        Vendor.name == body.name,
+        Vendor.workspace_id == workspace.workspace_id,
+    ).first()
     if existing:
         raise HTTPException(status_code=400, detail="Vendor with this name already exists")
     vendor = Vendor(
@@ -138,6 +161,8 @@ def create_vendor(
         reliability_score=Decimal(str(body.reliability_score)) if body.reliability_score is not None else None,
         cost_score=Decimal(str(body.cost_score)) if body.cost_score is not None else None,
         overall_score=Decimal(str(body.overall_score)) if body.overall_score is not None else None,
+        workspace_id=workspace.workspace_id,
+        is_demo=workspace.is_demo,
     )
     db.add(vendor)
     db.commit()
@@ -157,13 +182,21 @@ def create_vendor(
 def delete_vendor(
     vendor_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin),
+    workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
-    """Delete a vendor. Fails if the vendor has any purchase orders."""
-    vendor = db.query(Vendor).filter(Vendor.id == vendor_id).first()
+    """Delete a vendor scoped to workspace. Fails if the vendor has any purchase orders."""
+    vendor = db.query(Vendor).filter(
+        Vendor.id == vendor_id,
+        Vendor.workspace_id == workspace.workspace_id,
+    ).first()
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
-    has_pos = db.query(PurchaseOrder).filter(PurchaseOrder.vendor_id == vendor_id).limit(1).first()
+    has_pos = (
+        db.query(PurchaseOrder)
+        .filter(PurchaseOrder.vendor_id == vendor_id, PurchaseOrder.workspace_id == workspace.workspace_id)
+        .limit(1)
+        .first()
+    )
     if has_pos:
         raise HTTPException(
             status_code=400,
@@ -174,28 +207,37 @@ def delete_vendor(
     return None
 
 
+
 @router.get("/rankings", response_model=List[VendorRankingResponse])
 def get_vendor_rankings(
     product_id: Optional[int] = Query(None, description="Filter by product"),
     min_reliability: Optional[float] = Query(None, ge=0, le=100, description="Minimum reliability score"),
     max_cost: Optional[float] = Query(None, ge=0, description="Maximum unit cost"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
     """
-    Get ranked vendor list.
-    
+    Get ranked vendor list scoped to workspace.
     Sorted by overall_score (descending).
-    Supports filtering by product, reliability, and cost.
     """
-    query = db.query(Vendor).filter(Vendor.is_active == True)
+    query = db.query(Vendor).filter(
+        Vendor.is_active == True,
+        Vendor.workspace_id == workspace.workspace_id,
+    )
     
     # Filter by product (vendors that supply this product)
     if product_id:
+        p = db.query(Product).filter(
+            Product.id == product_id,
+            Product.workspace_id == workspace.workspace_id,
+        ).first()
+        if not p:
+            raise HTTPException(status_code=404, detail="Product not found")
         vendor_ids = db.query(VendorProduct.vendor_id).filter(
             VendorProduct.product_id == product_id
         ).subquery()
         query = query.filter(Vendor.id.in_(vendor_ids))
+
     
     # Filter by minimum reliability
     if min_reliability is not None:
@@ -250,27 +292,26 @@ def get_vendor_rankings(
 def get_best_vendor_for_product(
     product_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
     """
-    Get best vendor recommendation for a product.
-    
-    Considers:
-    - Vendor pricing (vendor_products.unit_cost)
-    - Reliability score
-    - Lead time
-    - Overall score
-    
-    Returns recommended vendor + 2 alternatives.
+    Get best vendor recommendation for a product scoped to workspace.
     """
-    product = db.query(Product).filter(Product.id == product_id).first()
+    product = db.query(Product).filter(
+        Product.id == product_id,
+        Product.workspace_id == workspace.workspace_id,
+    ).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     
     # Get vendors that supply this product
-    vendor_products = db.query(VendorProduct).filter(
-        VendorProduct.product_id == product_id
-    ).join(Vendor).filter(Vendor.is_active == True).all()
+    vendor_products = (
+        db.query(VendorProduct)
+        .filter(VendorProduct.product_id == product_id)
+        .join(Vendor)
+        .filter(Vendor.is_active == True, Vendor.workspace_id == workspace.workspace_id)
+        .all()
+    )
     
     if not vendor_products:
         raise HTTPException(status_code=404, detail="No active vendors supply this product")
@@ -361,17 +402,18 @@ def get_vendor_performance(
     vendor_id: int,
     days: int = Query(30, ge=1, le=365, description="Number of days of history"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
     """
-    Get vendor performance history (time-series).
-    
-    Used by dashboards and AI for trend analysis.
-    Read-optimized with indexed queries.
+    Get vendor performance history (time-series) scoped to workspace.
     """
-    vendor = db.query(Vendor).filter(Vendor.id == vendor_id).first()
+    vendor = db.query(Vendor).filter(
+        Vendor.id == vendor_id,
+        Vendor.workspace_id == workspace.workspace_id,
+    ).first()
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
+
     
     cutoff_date = datetime.now() - timedelta(days=days)
     
@@ -418,27 +460,31 @@ class VendorComparisonResponse(BaseModel):
 def compare_vendors_for_product(
     product_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
     """
-    Dashboard: Compare all vendors for a specific product.
-    
-    Read-optimized: Single query with joins.
-    Returns vendors sorted by overall score.
+    Dashboard: Compare all vendors for a specific product scoped to workspace.
     """
-    product = db.query(Product).filter(Product.id == product_id).first()
+    product = db.query(Product).filter(
+        Product.id == product_id,
+        Product.workspace_id == workspace.workspace_id,
+    ).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     
-    # Single optimized query with joins
-    vendor_products = db.query(VendorProduct, Vendor).join(
-        Vendor, VendorProduct.vendor_id == Vendor.id
-    ).filter(
-        and_(
-            VendorProduct.product_id == product_id,
-            Vendor.is_active == True
+    vendor_products = (
+        db.query(VendorProduct, Vendor)
+        .join(Vendor, VendorProduct.vendor_id == Vendor.id)
+        .filter(
+            and_(
+                VendorProduct.product_id == product_id,
+                Vendor.is_active == True,
+                Vendor.workspace_id == workspace.workspace_id,
+            )
         )
-    ).order_by(desc(Vendor.overall_score)).all()
+        .order_by(desc(Vendor.overall_score))
+        .all()
+    )
     
     results = []
     for vp, vendor in vendor_products:
@@ -463,13 +509,23 @@ def compare_vendors_for_product(
 def get_vendor_products(
     vendor_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
-    """List products (inventory) that a vendor supplies. Use this to place orders."""
-    vendor = db.query(Vendor).filter(Vendor.id == vendor_id, Vendor.is_active == True).first()
+    """List products that a vendor supplies scoped to workspace."""
+    vendor = db.query(Vendor).filter(
+        Vendor.id == vendor_id,
+        Vendor.is_active == True,
+        Vendor.workspace_id == workspace.workspace_id,
+    ).first()
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
-    vps = db.query(VendorProduct).filter(VendorProduct.vendor_id == vendor_id).join(Product).all()
+    vps = (
+        db.query(VendorProduct)
+        .filter(VendorProduct.vendor_id == vendor_id)
+        .join(Product)
+        .filter(Product.workspace_id == workspace.workspace_id)
+        .all()
+    )
     return [
         VendorProductResponse(
             vendor_product_id=vp.id,
@@ -488,13 +544,19 @@ def add_product_to_vendor(
     vendor_id: int,
     body: VendorProductCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
-    """Add a product to a vendor's catalog (admin)."""
-    vendor = db.query(Vendor).filter(Vendor.id == vendor_id).first()
+    """Add a product to a vendor's catalog scoped to workspace."""
+    vendor = db.query(Vendor).filter(
+        Vendor.id == vendor_id,
+        Vendor.workspace_id == workspace.workspace_id,
+    ).first()
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
-    product = db.query(Product).filter(Product.id == body.product_id).first()
+    product = db.query(Product).filter(
+        Product.id == body.product_id,
+        Product.workspace_id == workspace.workspace_id,
+    ).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     existing = db.query(VendorProduct).filter(
@@ -543,16 +605,18 @@ class VendorScorecardResponse(BaseModel):
 def get_vendor_scorecard(
     vendor_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin)
+    workspace: WorkspaceContext = Depends(get_current_workspace),
 ):
     """
-    Dashboard: Vendor scorecard with trends and action insights.
-    
-    Read-optimized: Aggregated queries.
+    Dashboard: Vendor scorecard with trends and action insights scoped to workspace.
     """
-    vendor = db.query(Vendor).filter(Vendor.id == vendor_id).first()
+    vendor = db.query(Vendor).filter(
+        Vendor.id == vendor_id,
+        Vendor.workspace_id == workspace.workspace_id,
+    ).first()
     if not vendor:
         raise HTTPException(status_code=404, detail="Vendor not found")
+
     
     # Get recent metrics (last 2 periods for trend)
     metrics = db.query(VendorPerformanceMetric).filter(

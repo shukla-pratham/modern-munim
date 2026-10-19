@@ -32,10 +32,11 @@ Backend login was taking too long (75+ seconds timeout).
 ## Testing
 
 ```bash
-# Test login speed
-time curl -X POST http://localhost:8000/api/auth/login \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=admin@marketplace.com&password=admin123"
+# Test auth start speed (admin email+password step; no demo accounts)
+time curl -X POST http://localhost:8000/api/auth/start \
+  -H "Content-Type: application/json" \
+  -H "Host: localhost" \
+  -d '{"email":"you@example.com","password":"your-password"}'
 ```
 
 ## Production Note

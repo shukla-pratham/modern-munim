@@ -225,11 +225,10 @@ alembic upgrade head
 ### User Roles
 - **admin** - Full system access (ONLY ROLE)
 
-### Demo Credentials
+### Admin sign-in (no demo accounts)
 
-**Admin:**
-- Email: `admin@marketplace.com`
-- Password: `admin123`
+Email → password → (store name + store type if new) → 6-digit email OTP → JWT.  
+Legacy `/api/auth/login` and `/api/auth/register` are disabled; use `/api/auth/start`, `/api/auth/onboard`, `/api/auth/verify-otp`.
 
 ---
 
@@ -250,28 +249,20 @@ GET /health
 
 ### Authentication
 
-#### Register User
+#### Start auth / onboard / verify OTP
 ```
-POST /api/auth/register
+POST /api/auth/start
 Content-Type: application/json
+{"email":"you@example.com","password":"your-password"}
 
-{
-  "email": "user@example.com",
-  "password": "password123",
-  "full_name": "John Doe",
-  "role": "admin"
-}
+POST /api/auth/onboard   # only when start returns needs_onboarding
+{"email":"you@example.com","password":"your-password","store_name":"My Store","store_type":"Bakery"}
+
+POST /api/auth/verify-otp
+{"email":"you@example.com","code":"123456"}
 ```
 
-#### Login
-```
-POST /api/auth/login
-Content-Type: application/x-www-form-urlencoded
-
-username=admin@marketplace.com&password=admin123
-```
-
-**Response:**
+**Response (verify-otp):**
 ```json
 {
   "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
@@ -977,9 +968,10 @@ python verify_database_setup.py
 
 ### Test Login
 ```bash
-curl -X POST http://127.0.0.1:8000/api/auth/login \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=admin@marketplace.com&password=admin123"
+curl -X POST http://127.0.0.1:8000/api/auth/start \
+  -H "Content-Type: application/json" \
+  -H "Host: localhost" \
+  -d '{"email":"you@example.com","password":"your-password"}'
 ```
 
 ---

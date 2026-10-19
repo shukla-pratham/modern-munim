@@ -21,7 +21,17 @@ class JobRun(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     job_type = Column(String, nullable=False, default="ai_batch_processing", index=True)
-    status = Column(SQLEnum(JobStatus), default=JobStatus.RUNNING, nullable=False, index=True)
+    status = Column(
+        SQLEnum(
+            JobStatus,
+            name="jobstatus",
+            values_callable=lambda x: [e.value for e in x],
+            create_type=False,
+        ),
+        default=JobStatus.RUNNING,
+        nullable=False,
+        index=True,
+    )
     started_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     
