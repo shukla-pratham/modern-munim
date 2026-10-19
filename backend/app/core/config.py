@@ -34,6 +34,8 @@ class Settings(BaseSettings):
         default=True,
         description="Log OTP codes to server logs in development when SMTP is missing or for debugging",
     )
+    RESEND_API_KEY: str = Field(default="", description="Resend API key (re_...) for HTTPS email delivery")
+    RESEND_FROM_EMAIL: str = Field(default="onboarding@resend.dev", description="Sender email address for Resend")
 
     @validator("CORS_ORIGINS", pre=True)
     def parse_cors_origins(cls, v):
@@ -74,12 +76,15 @@ class Settings(BaseSettings):
 
 
 def enforce_production_mail(settings_obj) -> None:
-    """Production must email OTPs and must not log them."""
+    """Production must email OTPs (via Resend HTTPS API or SMTP) and must not log them."""
     if getattr(settings_obj, "ENVIRONMENT", "") != "production":
         return
-    if not getattr(settings_obj, "SMTP_USER", "") or not getattr(settings_obj, "SMTP_PASSWORD", ""):
+    has_resend = bool(getattr(settings_obj, "RESEND_API_KEY", "").strip())
+    has_smtp = bool(getattr(settings_obj, "SMTP_USER", "").strip() and getattr(settings_obj, "SMTP_PASSWORD", "").strip())
+    if not (has_resend or has_smtp):
         raise ValueError(
-            "SMTP_USER and SMTP_PASSWORD are required in production so login OTPs can be emailed."
+            "Either RESEND_API_KEY (recommended for Render free tier HTTPS delivery) or "
+            "(SMTP_USER and SMTP_PASSWORD) is required in production so login OTPs can be emailed."
         )
     if getattr(settings_obj, "EMAIL_OTP_DEV_LOG", False):
         raise ValueError(
