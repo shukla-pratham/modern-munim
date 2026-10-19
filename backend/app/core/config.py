@@ -76,15 +76,19 @@ class Settings(BaseSettings):
 
 
 def enforce_production_mail(settings_obj) -> None:
-    """Production must email OTPs (via Resend HTTPS API or SMTP) and must not log them."""
+    """Production must email OTPs via Resend HTTPS API and must not log them.
+
+    SMTP is a development-only fallback and is not accepted in production.
+    Resend HTTPS delivery is immune to cloud-hosting SMTP port blocks.
+    """
     if getattr(settings_obj, "ENVIRONMENT", "") != "production":
         return
     has_resend = bool(getattr(settings_obj, "RESEND_API_KEY", "").strip())
-    has_smtp = bool(getattr(settings_obj, "SMTP_USER", "").strip() and getattr(settings_obj, "SMTP_PASSWORD", "").strip())
-    if not (has_resend or has_smtp):
+    if not has_resend:
         raise ValueError(
-            "Either RESEND_API_KEY (recommended for Render free tier HTTPS delivery) or "
-            "(SMTP_USER and SMTP_PASSWORD) is required in production so login OTPs can be emailed."
+            "RESEND_API_KEY is required in production. "
+            "Obtain a key at https://resend.com and set it in your Render environment variables. "
+            "SMTP is not accepted as a production mail transport."
         )
     if getattr(settings_obj, "EMAIL_OTP_DEV_LOG", False):
         raise ValueError(

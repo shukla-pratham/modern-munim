@@ -65,8 +65,8 @@ def _issue_otp(db: Session, email: str, store_name: str | None = None) -> str:
     return send_login_otp(email, code, store_name)
 
 
-def _otp_message(email: str, delivery: str = "smtp") -> str:
-    if delivery == "smtp":
+def _otp_message(email: str, delivery: str = "resend") -> str:
+    if delivery in ("resend", "smtp"):
         return f"A 6-digit code was sent to {email}."
     return (
         f"A 6-digit code was generated for {email}. "
