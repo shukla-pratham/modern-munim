@@ -6,8 +6,8 @@ const baseURL = rawApiUrl;
 
 const api = axios.create({
   baseURL,
-  // Generous timeout to tolerate cold starts on free Render tier.
-  timeout: 20000,
+  // Generous timeout to tolerate cold starts on free Render tier (typically ~30-45s).
+  timeout: 45000,
   headers: { 'Content-Type': 'application/json' },
 });
 

@@ -141,31 +141,16 @@ def auth_onboard(
     )
 
 
-@router.post("/forgot-password", response_model=AuthStartResponse)
-def auth_forgot_password(
-    body: AuthResetPasswordRequest,
-    request: Request,
-    response: Response,
-    db: Session = Depends(get_db),
-):
+@router.post("/forgot-password", status_code=status.HTTP_400_BAD_REQUEST)
+def auth_forgot_password_disabled():
     """
-    Forgot password: email + new_password → reset hash → issue JWT.
-    No OTP step required.
+    Self-service password reset without ownership verification is disabled for security.
+    Contact your workspace administrator to reset your password, or update your password
+    via PATCH /api/auth/password when signed in.
     """
-    ip = _client_ip(request)
-    if is_rate_limited(f"auth-forgot:{ip}", settings.RATE_LIMIT_LOGIN_PER_MINUTE, 60.0):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many attempts. Try again later.",
-        )
-    result = admin_auth_service.reset_password(db, body.email, body.password)
-    if result.get("access_token"):
-        _set_auth_cookie(response, result["access_token"])
-    return AuthStartResponse(
-        status=result["status"],
-        email=result["email"],
-        message=result["message"],
-        access_token=result.get("access_token"),
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Self-service password reset is disabled. Please contact your workspace administrator to reset your password.",
     )
 
 

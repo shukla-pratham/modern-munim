@@ -133,22 +133,9 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (newPassword.length < 8) {
-      setError('Password must be at least 8 characters.');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError('Passwords do not match.');
-      return;
-    }
-    setLoading(true);
-    try {
-      await resetPassword(email, newPassword, handleLoginSuccess);
-    } catch (err: unknown) {
-      setError(apiErrorMessage(err, 'Could not reset password'));
-    } finally {
-      setLoading(false);
-    }
+    setError(
+      'Self-service password reset is disabled for account security. Please contact your workspace administrator to reset your password.'
+    );
   };
 
   const handleChooseStore = (storeId: number) => {

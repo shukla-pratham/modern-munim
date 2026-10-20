@@ -209,27 +209,13 @@ def test_forgot_password_resets_and_issues_token(
     })
     assert unknown.status_code == 400
 
-    # Known email → password reset + token
+    # Self-service forgot password is securely disabled without verified ownership → 400
     forgot = client.post("/api/auth/forgot-password", json={
         "email": cleanup_email,
         "password": "newpassword1",
     })
-    assert forgot.status_code == 200
-    body = forgot.json()
-    assert body["status"] == "authenticated"
-    token = body.get("access_token")
-    assert token
-
-    # Verify new password is hashed and old is gone
-    db.expire_all()
-    user = db.query(User).filter(User.email == cleanup_email).first()
-    assert verify_password("newpassword1", user.password_hash)
-    assert not verify_password("oldpassword1", user.password_hash)
-
-    # New password works for normal login
-    start = client.post("/api/auth/start", json={"email": cleanup_email, "password": "newpassword1"})
-    assert start.status_code == 200
-    assert start.json()["status"] == "authenticated"
+    assert forgot.status_code == 400
+    assert "disabled" in forgot.json()["detail"].lower()
 
 
 # ── Authenticated password update ─────────────────────────────────────────────
