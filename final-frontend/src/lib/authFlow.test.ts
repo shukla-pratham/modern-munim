@@ -11,8 +11,9 @@ describe('authFlow', () => {
     expect(nextStepAfterStart('needs_onboarding')).toBe('onboarding');
   });
 
-  it('existing email start status goes to otp (skips store fields)', () => {
-    expect(nextStepAfterStart('otp_sent')).toBe('otp');
+  it('authenticated status returns credentials (caller handles login)', () => {
+    // 'authenticated' means JWT is issued; LoginPage handles completion directly.
+    expect(nextStepAfterStart('authenticated')).toBe('credentials');
   });
 
   it('rejects missing store name', () => {

@@ -12,11 +12,10 @@ from app.schemas.user import (
     AuthStartRequest,
     AuthStartResponse,
     AuthOnboardRequest,
-    AuthOtpVerifyRequest,
-    AuthOtpResendRequest,
     AuthForgotPasswordRequest,
     AuthPasswordUpdateRequest,
     AuthStoreTypesResponse,
+    AuthResetPasswordRequest,
 )
 from app.services import admin_auth_service
 
@@ -69,7 +68,6 @@ def _user_response(user: User, db: Session | None = None) -> UserResponse:
     )
 
 
-
 def _set_auth_cookie(response: Response, access_token: str) -> None:
     if settings.JWT_COOKIE_NAME:
         response.set_cookie(
@@ -91,9 +89,10 @@ def list_store_types():
 def auth_start(
     body: AuthStartRequest,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ):
-    """Email + password → needs_onboarding (new) or otp_sent (existing)."""
+    """Email + password → needs_onboarding (new user) or authenticated (issues JWT)."""
     ip = _client_ip(request)
     if is_rate_limited(f"auth-start:{ip}", settings.RATE_LIMIT_LOGIN_PER_MINUTE, 60.0):
         raise HTTPException(
@@ -101,16 +100,24 @@ def auth_start(
             detail="Too many attempts. Try again later.",
         )
     result = admin_auth_service.start_auth(db, body.email, body.password)
-    return AuthStartResponse(**result)
+    if result.get("access_token"):
+        _set_auth_cookie(response, result["access_token"])
+    return AuthStartResponse(
+        status=result["status"],
+        email=result["email"],
+        message=result["message"],
+        access_token=result.get("access_token"),
+    )
 
 
 @router.post("/onboard", response_model=AuthStartResponse)
 def auth_onboard(
     body: AuthOnboardRequest,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ):
-    """New user: create admin account with store fields, then send OTP."""
+    """New user: create admin account with store fields, issue JWT immediately."""
     ip = _client_ip(request)
     if is_rate_limited(f"auth-onboard:{ip}", settings.RATE_LIMIT_LOGIN_PER_MINUTE, 60.0):
         raise HTTPException(
@@ -124,56 +131,26 @@ def auth_onboard(
         body.store_name,
         body.store_type,
     )
-    return AuthStartResponse(**result)
-
-
-@router.post("/resend-otp", response_model=AuthStartResponse)
-def auth_resend_otp(
-    body: AuthOtpResendRequest,
-    request: Request,
-    db: Session = Depends(get_db),
-):
-    ip = _client_ip(request)
-    if is_rate_limited(f"otp:{ip}", settings.RATE_LIMIT_LOGIN_PER_MINUTE, 60.0):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many OTP requests. Try again later.",
-        )
-    if is_rate_limited(f"otp-email:{body.email.lower()}", 5, 60.0):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many OTP requests for this email. Try again later.",
-        )
-    result = admin_auth_service.resend_otp(db, body.email)
-    return AuthStartResponse(**result)
-
-
-@router.post("/verify-otp", response_model=LoginResponse)
-def auth_verify_otp(
-    body: AuthOtpVerifyRequest,
-    response: Response,
-    db: Session = Depends(get_db),
-):
-    """Verify email OTP and issue admin JWT session."""
-    result = admin_auth_service.verify_otp(db, body.email, body.code)
-    access_token = result["access_token"]
-    _set_auth_cookie(response, access_token)
-    return LoginResponse(
-        access_token=access_token,
-        token_type="bearer",
-        mfa_required=False,
+    if result.get("access_token"):
+        _set_auth_cookie(response, result["access_token"])
+    return AuthStartResponse(
+        status=result["status"],
+        email=result["email"],
+        message=result["message"],
+        access_token=result.get("access_token"),
     )
 
 
 @router.post("/forgot-password", response_model=AuthStartResponse)
 def auth_forgot_password(
-    body: AuthForgotPasswordRequest,
+    body: AuthResetPasswordRequest,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ):
     """
-    Forgot password: email → OTP only (no password).
-    After OTP verify, client is logged in and may call PATCH /password.
+    Forgot password: email + new_password → reset hash → issue JWT.
+    No OTP step required.
     """
     ip = _client_ip(request)
     if is_rate_limited(f"auth-forgot:{ip}", settings.RATE_LIMIT_LOGIN_PER_MINUTE, 60.0):
@@ -181,13 +158,15 @@ def auth_forgot_password(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many attempts. Try again later.",
         )
-    if is_rate_limited(f"otp-email:{body.email.lower()}", 5, 60.0):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many OTP requests for this email. Try again later.",
-        )
-    result = admin_auth_service.start_forgot_password(db, body.email)
-    return AuthStartResponse(**result)
+    result = admin_auth_service.reset_password(db, body.email, body.password)
+    if result.get("access_token"):
+        _set_auth_cookie(response, result["access_token"])
+    return AuthStartResponse(
+        status=result["status"],
+        email=result["email"],
+        message=result["message"],
+        access_token=result.get("access_token"),
+    )
 
 
 @router.patch("/password", response_model=UserResponse)
@@ -196,10 +175,12 @@ def auth_update_password(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin),
 ):
-    """Set a new password after an authenticated OTP login (forgot-password recovery)."""
+    """Authenticated admin updates their password."""
     user = admin_auth_service.update_password(db, current_user, body.password)
     return _user_response(user)
 
+
+# ── Disabled legacy endpoints ─────────────────────────────────────────────────
 
 @router.post("/register", status_code=status.HTTP_400_BAD_REQUEST)
 def register_disabled():
@@ -213,16 +194,31 @@ def register_disabled():
 def login_disabled():
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Use /api/auth/start → OTP verification for admin sign-in.",
+        detail="Use /api/auth/start for admin sign-in.",
     )
 
 
 @router.post("/request-otp", status_code=status.HTTP_400_BAD_REQUEST)
 def request_otp_disabled():
-    """Legacy OTP-only endpoint — disabled."""
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail="OTP-only sign-in is disabled. Use email + password via /api/auth/start.",
+        detail="OTP sign-in is disabled. Use email + password via /api/auth/start.",
+    )
+
+
+@router.post("/resend-otp", status_code=status.HTTP_400_BAD_REQUEST)
+def resend_otp_disabled():
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="OTP sign-in is disabled. Use email + password via /api/auth/start.",
+    )
+
+
+@router.post("/verify-otp", status_code=status.HTTP_400_BAD_REQUEST)
+def verify_otp_disabled():
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="OTP sign-in is disabled. Use email + password via /api/auth/start.",
     )
 
 
@@ -233,4 +229,3 @@ def get_current_user_info(
 ):
     """Authenticated admin profile (non-admins are rejected)."""
     return _user_response(current_user, db=db)
-

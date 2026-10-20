@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { AlertTriangle, KeyRound, Mail, Loader2, X, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, KeyRound, Loader2, X, ShieldAlert } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 
 interface DeleteStoreModalProps {
@@ -18,38 +18,12 @@ export function DeleteStoreModal({
   onClose,
   onSuccess,
 }: DeleteStoreModalProps) {
-  const { requestStoreDeleteOtp, deleteStoreWorkspace } = useAuth();
+  const { deleteStoreWorkspace } = useAuth();
   const [password, setPassword] = useState('');
-  const [otp, setOtp] = useState('');
-  const [step, setStep] = useState<'initial' | 'otp_sent'>('initial');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
 
   if (!isOpen || !storeId) return null;
-
-  const handleSendOtp = async () => {
-    if (!password) {
-      setError('Please enter your account password to verify your identity.');
-      return;
-    }
-    setError('');
-    setNotice('');
-    setLoading(true);
-    try {
-      const res = await requestStoreDeleteOtp(storeId);
-      setNotice(res.message || 'Verification OTP sent to your registered email.');
-      setStep('otp_sent');
-    } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        (err as { message?: string })?.message ??
-        'Failed to send deletion OTP.';
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleConfirmDelete = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,18 +31,10 @@ export function DeleteStoreModal({
       setError('Password is required.');
       return;
     }
-    if (!otp.trim() || otp.trim().length !== 6) {
-      setError('Please enter the 6-digit OTP sent to your email.');
-      return;
-    }
-
     setError('');
     setLoading(true);
     try {
-      await deleteStoreWorkspace(storeId, {
-        password,
-        otp: otp.trim(),
-      });
+      await deleteStoreWorkspace(storeId, { password });
       onSuccess(storeId);
       handleClose();
     } catch (err: unknown) {
@@ -84,10 +50,7 @@ export function DeleteStoreModal({
 
   const handleClose = () => {
     setPassword('');
-    setOtp('');
-    setStep('initial');
     setError('');
-    setNotice('');
     onClose();
   };
 
@@ -114,8 +77,8 @@ export function DeleteStoreModal({
                 <ShieldAlert className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="font-semibold text-foreground text-sm">Security Verification</h3>
-                <p className="text-xs text-muted-foreground">Authorize Store Deletion</p>
+                <h3 className="font-semibold text-foreground text-sm">Delete Store</h3>
+                <p className="text-xs text-muted-foreground">Confirm with your password</p>
               </div>
             </div>
             <button
@@ -141,13 +104,6 @@ export function DeleteStoreModal({
             </div>
           )}
 
-          {notice && (
-            <div className="p-3 mb-4 text-xs bg-primary/10 border border-primary/20 text-primary rounded-lg flex items-center gap-2">
-              <Mail className="w-4 h-4 shrink-0" />
-              {notice}
-            </div>
-          )}
-
           <form onSubmit={handleConfirmDelete} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-foreground mb-1.5 flex items-center gap-1.5">
@@ -155,79 +111,34 @@ export function DeleteStoreModal({
                 Account Password
               </label>
               <input
+                id="delete-store-password"
                 type="password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your account password"
+                autoComplete="current-password"
                 className="w-full px-3 py-2 text-sm bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-destructive/50"
               />
             </div>
 
-            {step === 'initial' ? (
-              <div className="pt-2">
-                <button
-                  type="button"
-                  disabled={loading || !password}
-                  onClick={handleSendOtp}
-                  className="w-full py-2.5 bg-primary text-primary-foreground font-medium text-sm rounded-lg hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2 transition-opacity shadow-sm"
-                >
-                  {loading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <>
-                      <Mail className="w-4 h-4" />
-                      Send Verification OTP to Email
-                    </>
-                  )}
-                </button>
-              </div>
-            ) : (
-              <>
-                <div>
-                  <label className="block text-xs font-medium text-foreground mb-1.5 flex items-center justify-between">
-                    <span className="flex items-center gap-1.5">
-                      <Mail className="w-3.5 h-3.5 text-muted-foreground" />
-                      6-Digit Email OTP
-                    </span>
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={handleSendOtp}
-                      className="text-[11px] text-primary hover:underline"
-                    >
-                      Resend Code
-                    </button>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={6}
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value)}
-                    placeholder="e.g. 123456"
-                    className="w-full px-3 py-2 text-sm font-mono tracking-widest text-center bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-destructive/50"
-                  />
-                </div>
-
-                <div className="flex gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={handleClose}
-                    className="flex-1 py-2 text-sm border border-border rounded-lg text-muted-foreground hover:text-foreground"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={loading || !password || otp.trim().length !== 6}
-                    className="flex-1 py-2 bg-destructive text-destructive-foreground font-medium text-sm rounded-lg hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2 transition-opacity"
-                  >
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm & Delete'}
-                  </button>
-                </div>
-              </>
-            )}
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={handleClose}
+                className="flex-1 py-2 text-sm border border-border rounded-lg text-muted-foreground hover:text-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                id="delete-store-confirm"
+                type="submit"
+                disabled={loading || !password}
+                className="flex-1 py-2 bg-destructive text-destructive-foreground font-medium text-sm rounded-lg hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2 transition-opacity"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Confirm & Delete'}
+              </button>
+            </div>
           </form>
         </motion.div>
       </div>

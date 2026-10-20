@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { SettingsProvider, useAppSettings } from '@/contexts/SettingsContext';
 import { AuthProvider, useAuth } from '@/lib/auth-context';
-import { PENDING_PASSWORD_RESET_KEY } from '@/lib/authFlow';
 import CinematicIntro from '@/components/CinematicIntro';
 import LoginPage from '@/components/LoginPage';
 import RegisterPage from '@/components/RegisterPage';
@@ -68,7 +67,7 @@ function AppContent() {
     );
   }
 
-  if (sessionStorage.getItem(PENDING_PASSWORD_RESET_KEY) === '1') {
+  if (sessionStorage.getItem('pending_password_reset') === '1') {
     return (
       <SetNewPasswordGate
         onDone={() => setPasswordGateTick((n) => n + 1)}

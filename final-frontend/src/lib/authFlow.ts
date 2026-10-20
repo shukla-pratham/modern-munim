@@ -11,16 +11,14 @@ export const STORE_TYPES = [
   'Other',
 ] as const;
 
-export type AuthStep = 'credentials' | 'onboarding' | 'otp' | 'store_select' | 'forgot_email';
+export type AuthStep = 'credentials' | 'onboarding' | 'store_select' | 'forgot_password';
 
-export type AuthStartStatus = 'needs_onboarding' | 'otp_sent';
-
-/** Set after forgot-password OTP login; cleared after new password is saved. */
-export const PENDING_PASSWORD_RESET_KEY = 'pending_password_reset';
+export type AuthStartStatus = 'needs_onboarding' | 'authenticated';
 
 export function nextStepAfterStart(status: AuthStartStatus): AuthStep {
   if (status === 'needs_onboarding') return 'onboarding';
-  return 'otp';
+  // 'authenticated' — JWT already issued, caller handles login completion
+  return 'credentials';
 }
 
 export function canSubmitOnboarding(storeName: string, storeType: string): boolean {

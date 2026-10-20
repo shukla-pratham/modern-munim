@@ -6,7 +6,7 @@ import {
   type WorkspaceResponse,
   type WorkspaceCreate,
 } from './api';
-import { isAdminRole, PENDING_PASSWORD_RESET_KEY, type AuthStartStatus } from './authFlow';
+import { isAdminRole, type AuthStartStatus } from './authFlow';
 
 type AuthContextType = {
   user: AuthUser | null;
@@ -16,18 +16,27 @@ type AuthContextType = {
   loadWorkspaces: () => Promise<WorkspaceResponse[]>;
   selectWorkspace: (workspaceId: number) => void;
   createStoreWorkspace: (data: WorkspaceCreate) => Promise<WorkspaceResponse>;
-  requestStoreDeleteOtp: (workspaceId: number) => Promise<{ message: string; email: string }>;
-  deleteStoreWorkspace: (workspaceId: number, data: { password: string; otp: string }) => Promise<void>;
-  startAuth: (email: string, password: string) => Promise<{ status: AuthStartStatus; message: string; email: string }>;
+  deleteStoreWorkspace: (workspaceId: number, data: { password: string }) => Promise<void>;
+  /** Step 1 of login. Returns status 'needs_onboarding' or calls onLoginSuccess when authenticated. */
+  startAuth: (
+    email: string,
+    password: string,
+    onLoginSuccess: () => void,
+  ) => Promise<{ status: AuthStartStatus; message: string; email: string }>;
+  /** Complete signup for new users. Issues JWT and calls onLoginSuccess. */
   completeOnboarding: (
     email: string,
     password: string,
     storeName: string,
     storeType: string,
+    onLoginSuccess: () => void,
   ) => Promise<{ message: string; email: string }>;
-  forgotPassword: (email: string) => Promise<{ message: string; email: string }>;
-  verifyOtp: (email: string, code: string) => Promise<{ workspaces: WorkspaceResponse[]; activeWorkspace: WorkspaceResponse | null }>;
-  resendOtp: (email: string) => Promise<{ message: string }>;
+  /** Forgot-password: reset password directly. Issues JWT and calls onLoginSuccess. */
+  resetPassword: (
+    email: string,
+    newPassword: string,
+    onLoginSuccess: () => void,
+  ) => Promise<{ message: string }>;
   refreshUser: () => Promise<void>;
   logout: () => void;
 };
@@ -41,6 +50,22 @@ function acceptAdminOrThrow(user: AuthUser): AuthUser {
     throw new Error('Admin access required');
   }
   return user;
+}
+
+async function _applyToken(
+  token: string,
+  setUser: (u: AuthUser) => void,
+  syncWorkspaces: () => Promise<WorkspaceResponse[]>,
+  onLoginSuccess: () => void,
+): Promise<WorkspaceResponse[]> {
+  localStorage.setItem('access_token', token);
+  const me = await authAPI.getMe();
+  setUser(acceptAdminOrThrow(me.data));
+  const list = await syncWorkspaces();
+  if (list.length <= 1) {
+    onLoginSuccess();
+  }
+  return list;
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -116,12 +141,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return newWs;
   };
 
-  const requestStoreDeleteOtp = async (workspaceId: number) => {
-    const res = await workspacesAPI.requestDeleteOtp(workspaceId);
-    return res.data;
-  };
-
-  const deleteStoreWorkspace = async (workspaceId: number, data: { password: string; otp: string }) => {
+  const deleteStoreWorkspace = async (workspaceId: number, data: { password: string }) => {
     await workspacesAPI.delete(workspaceId, data);
     setWorkspaces((prev) => {
       const remaining = prev.filter((w) => w.id !== workspaceId);
@@ -137,14 +157,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-
   const loadWorkspaces = async () => {
     return await syncWorkspaces();
   };
 
-  const startAuth = async (email: string, password: string) => {
+  const startAuth = async (
+    email: string,
+    password: string,
+    onLoginSuccess: () => void,
+  ) => {
     const { data } = await authAPI.start(email.trim(), password);
-    return { status: data.status, message: data.message, email: data.email };
+    if (data.status === 'authenticated' && data.access_token) {
+      const list = await _applyToken(data.access_token, setUser, syncWorkspaces, onLoginSuccess);
+      // If multi-store: caller will show store_select step (return status so LoginPage knows)
+      return { status: data.status as AuthStartStatus, message: data.message, email: data.email, workspaces: list };
+    }
+    return { status: data.status as AuthStartStatus, message: data.message, email: data.email };
   };
 
   const completeOnboarding = async (
@@ -152,38 +180,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     password: string,
     storeName: string,
     storeType: string,
+    onLoginSuccess: () => void,
   ) => {
-    const { data } = await authAPI.onboard(
-      email.trim(),
-      password,
-      storeName.trim(),
-      storeType.trim(),
-    );
-    return { message: data.message, email: data.email };
-  };
-
-  const forgotPassword = async (email: string) => {
-    const { data } = await authAPI.forgotPassword(email.trim());
-    return { message: data.message, email: data.email };
-  };
-
-  const verifyOtp = async (email: string, code: string) => {
-    const { data } = await authAPI.verifyOtp(email.trim(), code.trim());
-    if (!data.access_token) {
-      throw new Error('OTP verification failed');
+    const { data } = await authAPI.onboard(email.trim(), password, storeName.trim(), storeType.trim());
+    if (data.access_token) {
+      await _applyToken(data.access_token, setUser, syncWorkspaces, onLoginSuccess);
     }
-    localStorage.setItem('access_token', data.access_token);
-    const me = await authAPI.getMe();
-    setUser(acceptAdminOrThrow(me.data));
-    const list = await syncWorkspaces();
-    return {
-      workspaces: list,
-      activeWorkspace: list.length > 0 ? list[0] : null,
-    };
+    return { message: data.message, email: data.email };
   };
 
-  const resendOtp = async (email: string) => {
-    const { data } = await authAPI.resendOtp(email.trim());
+  const resetPassword = async (
+    email: string,
+    newPassword: string,
+    onLoginSuccess: () => void,
+  ) => {
+    const { data } = await authAPI.resetPassword(email.trim(), newPassword);
+    if (data.access_token) {
+      await _applyToken(data.access_token, setUser, syncWorkspaces, onLoginSuccess);
+    }
     return { message: data.message };
   };
 
@@ -196,7 +210,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = () => {
     localStorage.removeItem('access_token');
     localStorage.removeItem('active_workspace_id');
-    sessionStorage.removeItem(PENDING_PASSWORD_RESET_KEY);
     setUser(null);
     setWorkspaces([]);
     setActiveWorkspace(null);
@@ -213,13 +226,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loadWorkspaces,
         selectWorkspace,
         createStoreWorkspace,
-        requestStoreDeleteOtp,
         deleteStoreWorkspace,
         startAuth,
         completeOnboarding,
-        forgotPassword,
-        verifyOtp,
-        resendOtp,
+        resetPassword,
         refreshUser,
         logout,
       }}

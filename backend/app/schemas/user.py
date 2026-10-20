@@ -37,9 +37,10 @@ class AuthStartRequest(BaseModel):
 
 
 class AuthStartResponse(BaseModel):
-    status: str  # needs_onboarding | otp_sent
+    status: str  # needs_onboarding | authenticated
     email: str
     message: str
+    access_token: Optional[str] = None
 
 
 class AuthOnboardRequest(BaseModel):
@@ -49,16 +50,14 @@ class AuthOnboardRequest(BaseModel):
     store_type: str = Field(min_length=1, max_length=100)
 
 
-class AuthOtpVerifyRequest(BaseModel):
+class AuthResetPasswordRequest(BaseModel):
+    """Forgot-password: supply email + new password (no OTP required)."""
     email: EmailStr
-    code: str = Field(min_length=6, max_length=8)
-
-
-class AuthOtpResendRequest(BaseModel):
-    email: EmailStr
+    password: str = Field(min_length=8, max_length=128)
 
 
 class AuthForgotPasswordRequest(BaseModel):
+    """Kept for backward-compat import; use AuthResetPasswordRequest for new code."""
     email: EmailStr
 
 

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Lock, Loader2, ShieldCheck } from 'lucide-react';
 import { authAPI } from '@/lib/api';
-import { PENDING_PASSWORD_RESET_KEY } from '@/lib/authFlow';
 
 function apiErrorMessage(err: unknown, fallback: string): string {
   const ax = err as { response?: { data?: { detail?: unknown; error?: string } }; message?: string };
@@ -37,7 +36,7 @@ export default function SetNewPasswordGate({ onDone }: { onDone: () => void }) {
     setLoading(true);
     try {
       await authAPI.updatePassword(password);
-      sessionStorage.removeItem(PENDING_PASSWORD_RESET_KEY);
+      sessionStorage.removeItem('pending_password_reset');
       onDone();
     } catch (err: unknown) {
       setError(apiErrorMessage(err, 'Could not update password'));
@@ -59,7 +58,7 @@ export default function SetNewPasswordGate({ onDone }: { onDone: () => void }) {
           </div>
           <h1 className="text-2xl font-bold text-foreground">Set a new password</h1>
           <p className="text-xs text-muted-foreground mt-2 text-center">
-            You&apos;re signed in via email OTP. Choose a new password before continuing.
+            Choose a new password before continuing.
           </p>
         </div>
         <form onSubmit={submit} className="space-y-4">

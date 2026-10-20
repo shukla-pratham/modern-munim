@@ -11,6 +11,11 @@ services:
   backend:
     ports: !override
       - "127.0.0.1:18000:8000"
+    environment:
+      # Local staging: attempt Resend but fall back to server log on 403/delivery failure.
+      # OTP will appear in: docker logs marketplace_backend
+      ENVIRONMENT: staging
+      EMAIL_OTP_DEV_LOG: "true"
   frontend:
     ports: !override
       - "127.0.0.1:8088:80"

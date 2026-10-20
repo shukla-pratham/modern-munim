@@ -6,7 +6,7 @@ const baseURL = rawApiUrl;
 
 const api = axios.create({
   baseURL,
-  // Auth OTP send can wait on SMTP; keep slightly above backend SMTP timeout.
+  // Generous timeout to tolerate cold starts on free Render tier.
   timeout: 20000,
   headers: { 'Content-Type': 'application/json' },
 });
@@ -51,9 +51,10 @@ export interface LoginResponse {
 }
 
 export interface AuthStartResponse {
-  status: 'needs_onboarding' | 'otp_sent';
+  status: 'needs_onboarding' | 'authenticated';
   email: string;
   message: string;
+  access_token?: string;
 }
 
 export const authAPI = {
@@ -66,12 +67,9 @@ export const authAPI = {
       store_name,
       store_type,
     }),
-  forgotPassword: (email: string) =>
-    api.post<AuthStartResponse>('/api/auth/forgot-password', { email }),
-  resendOtp: (email: string) =>
-    api.post<AuthStartResponse>('/api/auth/resend-otp', { email }),
-  verifyOtp: (email: string, code: string) =>
-    api.post<LoginResponse>('/api/auth/verify-otp', { email, code }),
+  /** Forgot-password: reset with email + new password directly (no OTP). */
+  resetPassword: (email: string, password: string) =>
+    api.post<AuthStartResponse>('/api/auth/forgot-password', { email, password }),
   updatePassword: (password: string) =>
     api.patch<AuthUser>('/api/auth/password', { password }),
   getMe: () => api.get<AuthUser>('/api/auth/me'),
@@ -378,18 +376,14 @@ export interface WorkspaceCreate {
 
 export interface WorkspaceDeleteRequest {
   password: string;
-  otp: string;
 }
 
 export const workspacesAPI = {
   getCurrent: () => api.get<WorkspaceResponse>('/api/workspaces/current'),
   getSummary: () => api.get<WorkspaceSummaryResponse>('/api/workspaces/summary'),
   create: (data: WorkspaceCreate) => api.post<WorkspaceResponse>('/api/workspaces', data),
-  requestDeleteOtp: (workspaceId: number) =>
-    api.post<{ message: string; email: string }>(`/api/workspaces/${workspaceId}/request-delete-otp`),
-  delete: (workspaceId: number, data: { password: string; otp: string }) =>
+  delete: (workspaceId: number, data: { password: string }) =>
     api.post<{ message: string; deleted_id: number }>(`/api/workspaces/${workspaceId}/delete`, data),
 };
 
 export default api;
-

@@ -5,9 +5,7 @@ import { useAuth } from '@/lib/auth-context';
 import { DeleteStoreModal } from '@/components/DeleteStoreModal';
 import {
   STORE_TYPES,
-  PENDING_PASSWORD_RESET_KEY,
   canSubmitOnboarding,
-  nextStepAfterStart,
   type AuthStep,
 } from '@/lib/authFlow';
 
@@ -17,9 +15,6 @@ function apiErrorMessage(err: unknown, fallback: string): string {
     message?: string;
   };
   if (!ax.response) {
-    if ((ax as { code?: string }).code === 'ECONNABORTED') {
-      return 'Server took too long to respond. If email delivery is slow, check the API logs for your OTP.';
-    }
     return 'Could not connect to server.';
   }
   const data = ax.response.data ?? {};
@@ -42,11 +37,11 @@ function apiErrorMessage(err: unknown, fallback: string): string {
 export default function LoginPage({ onLogin }: { onLogin: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [storeName, setStoreName] = useState('');
   const [storeType, setStoreType] = useState('');
-  const [otp, setOtp] = useState('');
   const [step, setStep] = useState<AuthStep>('credentials');
-  const [forgotMode, setForgotMode] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -63,25 +58,37 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
   const {
     startAuth,
     completeOnboarding,
-    forgotPassword,
-    verifyOtp,
-    resendOtp,
+    resetPassword,
     selectWorkspace,
     createStoreWorkspace,
     deleteStoreWorkspace,
+    workspaces,
   } = useAuth();
-
 
   const resetToCredentials = () => {
     setStep('credentials');
-    setForgotMode(false);
-    setOtp('');
     setError('');
     setNotice('');
     setStoreName('');
     setStoreType('');
+    setNewPassword('');
+    setConfirmPassword('');
     setShowAddStoreForm(false);
-    sessionStorage.removeItem(PENDING_PASSWORD_RESET_KEY);
+  };
+
+  // Called after JWT is issued and workspace list has ≤1 entries (auto-enter)
+  const handleLoginSuccess = () => {
+    onLogin();
+  };
+
+  // Called when startAuth returns 'authenticated' with multi-store
+  const handleAuthenticated = (stores: any[]) => {
+    if (stores.length > 1) {
+      setUserStores(stores);
+      setStep('store_select');
+    } else {
+      onLogin();
+    }
   };
 
   const handleCredentials = async (e: React.FormEvent) => {
@@ -90,10 +97,15 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
     setNotice('');
     setLoading(true);
     try {
-      const result = await startAuth(email, password);
-      setNotice(result.message);
-      setStep(nextStepAfterStart(result.status));
-      setOtp('');
+      const result = await startAuth(email, password, handleLoginSuccess);
+      if (result.status === 'needs_onboarding') {
+        setNotice(result.message);
+        setStep('onboarding');
+      } else if (result.status === 'authenticated') {
+        // Multi-store check: workspaces already populated by startAuth
+        const stores = (result as any).workspaces ?? [];
+        handleAuthenticated(stores);
+      }
     } catch (err: unknown) {
       setError(apiErrorMessage(err, 'Could not continue'));
     } finally {
@@ -110,10 +122,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
     }
     setLoading(true);
     try {
-      const result = await completeOnboarding(email, password, storeName, storeType);
-      setNotice(result.message);
-      setStep('otp');
-      setOtp('');
+      await completeOnboarding(email, password, storeName, storeType, handleLoginSuccess);
     } catch (err: unknown) {
       setError(apiErrorMessage(err, 'Could not create account'));
     } finally {
@@ -121,45 +130,22 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
     }
   };
 
-  const handleForgotEmail = async (e: React.FormEvent) => {
+  const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setNotice('');
-    setLoading(true);
-    try {
-      const result = await forgotPassword(email);
-      setNotice(result.message);
-      setForgotMode(true);
-      setStep('otp');
-      setOtp('');
-    } catch (err: unknown) {
-      setError(apiErrorMessage(err, 'Could not start password recovery'));
-    } finally {
-      setLoading(false);
+    if (newPassword.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
     }
-  };
-
-  const handleVerify = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
+    if (newPassword !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
     setLoading(true);
     try {
-      if (forgotMode) {
-        sessionStorage.setItem(PENDING_PASSWORD_RESET_KEY, '1');
-      }
-      const authResult = await verifyOtp(email, otp);
-      const stores = authResult.workspaces || [];
-      setUserStores(stores);
-
-      // If user has more than 1 store, prompt them to pick a store or add a new one
-      if (stores.length > 1) {
-        setStep('store_select');
-      } else {
-        onLogin();
-      }
+      await resetPassword(email, newPassword, handleLoginSuccess);
     } catch (err: unknown) {
-      if (forgotMode) sessionStorage.removeItem(PENDING_PASSWORD_RESET_KEY);
-      setError(apiErrorMessage(err, 'Invalid verification code'));
+      setError(apiErrorMessage(err, 'Could not reset password'));
     } finally {
       setLoading(false);
     }
@@ -206,38 +192,20 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
     setUserStores(remaining);
     setDeleteTargetStore(null);
     if (remaining.length === 1) {
-      // If only 1 store remains, automatically enter it
       handleChooseStore(remaining[0].id);
-    }
-  };
-
-
-
-  const handleResend = async () => {
-    setError('');
-    setLoading(true);
-    try {
-      const result = forgotMode
-        ? await forgotPassword(email)
-        : await resendOtp(email);
-      setNotice(result.message);
-    } catch (err: unknown) {
-      setError(apiErrorMessage(err, 'Could not resend OTP'));
-    } finally {
-      setLoading(false);
     }
   };
 
   const subtitle =
     step === 'credentials'
-      ? 'Sign in with your email and password. New stores complete a short onboarding step.'
-      : step === 'forgot_email'
-        ? 'Enter your email. We will send a 6-digit OTP. After verification you will be signed in and can set a new password.'
+      ? 'Sign in with your email and password.'
+      : step === 'forgot_password'
+        ? 'Enter your email and a new password to reset your account.'
         : step === 'onboarding'
           ? "Looks like you're new here. Tell us about your store."
           : step === 'store_select'
             ? 'Select which store workspace you want to manage, or create a new store.'
-            : 'Enter the 6-digit code sent to your email.';
+            : '';
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background noise-bg relative overflow-hidden">
@@ -260,8 +228,8 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
             <h1 className="text-2xl font-bold text-foreground">
               {step === 'onboarding'
                 ? "Looks like you're new here."
-                : step === 'forgot_email'
-                  ? 'Forgot password'
+                : step === 'forgot_password'
+                  ? 'Reset Password'
                   : step === 'store_select'
                     ? 'Choose Your Store'
                     : 'Welcome / Sign In'}
@@ -269,7 +237,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
             <p className="text-xs text-muted-foreground mt-2 text-center">{subtitle}</p>
           </div>
 
-
+          {/* ── Credentials step ─────────────────────────────── */}
           {step === 'credentials' && (
             <form onSubmit={handleCredentials} className="space-y-4">
               <div>
@@ -277,6 +245,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <input
+                    id="login-email"
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -292,6 +261,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <input
+                    id="login-password"
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -305,12 +275,13 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
               </div>
               {error && <div className="p-3 rounded-lg bg-destructive/15 text-destructive text-sm">{error}</div>}
               <motion.button
+                id="login-submit"
                 type="submit"
                 disabled={loading}
                 whileTap={{ scale: 0.97 }}
                 className="w-full py-2.5 bg-primary text-primary-foreground rounded-lg font-medium text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity mt-2 disabled:opacity-70"
               >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Continue <ArrowRight className="w-4 h-4" /></>}
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Sign In <ArrowRight className="w-4 h-4" /></>}
               </motion.button>
               <button
                 type="button"
@@ -318,8 +289,9 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
                 onClick={() => {
                   setError('');
                   setNotice('');
-                  setForgotMode(true);
-                  setStep('forgot_email');
+                  setNewPassword('');
+                  setConfirmPassword('');
+                  setStep('forgot_password');
                 }}
               >
                 Forgot password?
@@ -327,13 +299,15 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
             </form>
           )}
 
-          {step === 'forgot_email' && (
-            <form onSubmit={handleForgotEmail} className="space-y-4">
+          {/* ── Forgot password step ──────────────────────────── */}
+          {step === 'forgot_password' && (
+            <form onSubmit={handleForgotPassword} className="space-y-4">
               <div>
                 <label className="text-sm font-medium text-foreground mb-1.5 block">Email</label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <input
+                    id="forgot-email"
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -344,14 +318,49 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
                   />
                 </div>
               </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1.5 block">New Password</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <input
+                    id="forgot-new-password"
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    minLength={8}
+                    autoComplete="new-password"
+                    placeholder="At least 8 characters"
+                    className="w-full pl-10 pr-4 py-2.5 bg-secondary border border-border rounded-lg text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground mb-1.5 block">Confirm Password</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <input
+                    id="forgot-confirm-password"
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    minLength={8}
+                    autoComplete="new-password"
+                    placeholder="Repeat new password"
+                    className="w-full pl-10 pr-4 py-2.5 bg-secondary border border-border rounded-lg text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  />
+                </div>
+              </div>
               {error && <div className="p-3 rounded-lg bg-destructive/15 text-destructive text-sm">{error}</div>}
               <motion.button
+                id="forgot-submit"
                 type="submit"
                 disabled={loading}
                 whileTap={{ scale: 0.97 }}
                 className="w-full py-2.5 bg-primary text-primary-foreground rounded-lg font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-70"
               >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Send OTP <ArrowRight className="w-4 h-4" /></>}
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Reset & Sign In <ShieldCheck className="w-4 h-4" /></>}
               </motion.button>
               <button
                 type="button"
@@ -363,6 +372,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
             </form>
           )}
 
+          {/* ── Onboarding step ───────────────────────────────── */}
           {step === 'onboarding' && (
             <form onSubmit={handleOnboarding} className="space-y-4">
               <p className="text-sm text-muted-foreground text-center">Tell us about your store.</p>
@@ -371,6 +381,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
                 <div className="relative">
                   <Store className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <input
+                    id="onboard-store-name"
                     type="text"
                     value={storeName}
                     onChange={(e) => setStoreName(e.target.value)}
@@ -385,6 +396,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
               <div>
                 <label className="text-sm font-medium text-foreground mb-1.5 block">Store Type</label>
                 <select
+                  id="onboard-store-type"
                   value={storeType}
                   onChange={(e) => setStoreType(e.target.value)}
                   required
@@ -402,12 +414,13 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
               </div>
               {error && <div className="p-3 rounded-lg bg-destructive/15 text-destructive text-sm">{error}</div>}
               <motion.button
+                id="onboard-submit"
                 type="submit"
                 disabled={loading || !canSubmitOnboarding(storeName, storeType)}
                 whileTap={{ scale: 0.97 }}
                 className="w-full py-2.5 bg-primary text-primary-foreground rounded-lg font-medium text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-70"
               >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Continue <ArrowRight className="w-4 h-4" /></>}
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Create Account <ArrowRight className="w-4 h-4" /></>}
               </motion.button>
               <button
                 type="button"
@@ -419,59 +432,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
             </form>
           )}
 
-          {step === 'otp' && (
-            <form onSubmit={handleVerify} className="space-y-4">
-              <div className="text-center space-y-1">
-                <h2 className="text-sm font-semibold text-foreground">Verify your email</h2>
-                <p className="text-xs text-muted-foreground">
-                  We&apos;ve sent a 6-digit OTP to:
-                  <br />
-                  <span className="text-foreground font-medium">{email}</span>
-                </p>
-              </div>
-              {notice && <div className="p-3 rounded-lg bg-primary/10 text-foreground text-sm">{notice}</div>}
-              <div>
-                <label className="text-sm font-medium text-foreground mb-1.5 block">6-digit OTP</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  required
-                  minLength={6}
-                  maxLength={6}
-                  placeholder="••••••"
-                  className="w-full px-4 py-2.5 bg-secondary border border-border rounded-lg text-foreground text-sm tracking-[0.35em] text-center focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
-              </div>
-              {error && <div className="p-3 rounded-lg bg-destructive/15 text-destructive text-sm">{error}</div>}
-              <motion.button
-                type="submit"
-                disabled={loading || otp.length !== 6}
-                whileTap={{ scale: 0.97 }}
-                className="w-full py-2.5 bg-primary text-primary-foreground rounded-lg font-medium text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-70"
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Verify <ShieldCheck className="w-4 h-4" /></>}
-              </motion.button>
-              <button
-                type="button"
-                disabled={loading}
-                className="w-full text-xs text-primary hover:underline disabled:opacity-50"
-                onClick={handleResend}
-              >
-                Resend OTP
-              </button>
-              <button
-                type="button"
-                className="w-full text-xs text-muted-foreground hover:text-foreground"
-                onClick={resetToCredentials}
-              >
-                Use a different email
-              </button>
-            </form>
-          )}
-
+          {/* ── Store select step ─────────────────────────────── */}
           {step === 'store_select' && (
             <div className="space-y-4">
               <div className="text-center space-y-1 mb-2">
@@ -589,7 +550,7 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
                     whileTap={{ scale: 0.97 }}
                     className="w-full py-2.5 bg-primary text-primary-foreground rounded-lg font-medium text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-70"
                   >
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Create & Enter Store <ArrowRight className="w-4 h-4" /></>}
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Create &amp; Enter Store <ArrowRight className="w-4 h-4" /></>}
                   </motion.button>
 
                   <button
@@ -607,7 +568,6 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
         </div>
       </motion.div>
 
-      {/* Security Verification Modal for Store Deletion */}
       <DeleteStoreModal
         isOpen={!!deleteTargetStore}
         storeId={deleteTargetStore?.id ?? null}

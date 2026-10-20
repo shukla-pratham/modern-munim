@@ -35,7 +35,6 @@ class OnboardingProgressUpdate(BaseModel):
 
 class DeleteWorkspaceRequest(BaseModel):
     password: str
-    otp: str
 
 
 class WorkspaceSummaryResponse(BaseModel):

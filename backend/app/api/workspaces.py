@@ -20,10 +20,7 @@ from app.services.workspace_service import (
     get_user_memberships,
     create_user_workspace,
 )
-from app.services.admin_auth_service import resend_otp
 from app.core.security import verify_password
-from app.models.email_otp import EmailOtp
-from datetime import timezone, datetime
 
 router = APIRouter()
 
@@ -113,31 +110,18 @@ def create_store_workspace(
     )
 
 
-@router.post("/{workspace_id}/request-delete-otp", status_code=status.HTTP_200_OK)
-def request_store_delete_otp(
+@router.post("/{workspace_id}/request-delete-otp", status_code=status.HTTP_410_GONE)
+def request_store_delete_otp_disabled(
     workspace_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin),
 ):
     """
-    Send an OTP code to the store owner's email specifically to authorize store deletion.
+    Legacy OTP-based deletion endpoint — disabled.
+    Store deletion now requires only password confirmation.
     """
-    user_memberships = get_user_memberships(db, current_user.id)
-    if len(user_memberships) <= 1:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot delete your only store. You must have at least one store.",
-        )
-
-    target_membership = next((m for m in user_memberships if m.workspace_id == workspace_id), None)
-    if not target_membership or target_membership.role != "owner":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only the store owner can delete this store workspace.",
-        )
-
-    result = resend_otp(db, current_user.email)
-    return {"message": "Verification OTP sent to your registered email.", "email": current_user.email}
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="OTP-based deletion is no longer required. Submit your password to delete a store.",
+    )
 
 
 @router.post("/{workspace_id}/delete", status_code=status.HTTP_200_OK)
@@ -149,7 +133,7 @@ def delete_store_workspace(
 ):
     """
     Delete a store workspace and cascade its data.
-    Requires password verification and OTP code verification.
+    Requires password confirmation only (no OTP).
     """
     # 1. Verify password
     if not current_user.password_hash or not verify_password(body.password, current_user.password_hash):
@@ -158,40 +142,7 @@ def delete_store_workspace(
             detail="Incorrect account password. Store deletion aborted.",
         )
 
-    # 2. Verify OTP
-    cleaned_otp = (body.otp or "").strip().replace(" ", "")
-    if not cleaned_otp.isdigit() or len(cleaned_otp) != 6:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Enter the valid 6-digit verification code sent to your email.",
-        )
-
-    row = db.query(EmailOtp).filter(EmailOtp.email == current_user.email).first()
-    if row is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No active OTP found. Please request a new verification code.",
-        )
-
-    expires = row.expires_at
-    if expires.tzinfo is None:
-        expires = expires.replace(tzinfo=timezone.utc)
-    if datetime.now(timezone.utc) > expires:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="OTP has expired. Please request a new code.",
-        )
-
-    if not verify_password(cleaned_otp, row.code_hash):
-        row.attempt_count = int(row.attempt_count or 0) + 1
-        db.add(row)
-        db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid verification code. Please check your email.",
-        )
-
-    # 3. Verify user memberships & permissions
+    # 2. Verify user memberships & permissions
     user_memberships = get_user_memberships(db, current_user.id)
     if len(user_memberships) <= 1:
         raise HTTPException(
@@ -219,8 +170,6 @@ def delete_store_workspace(
             detail="Store workspace not found.",
         )
 
-    # Clear OTP row on success
-    db.delete(row)
     db.delete(workspace)
     db.commit()
     return {"message": f"Store '{workspace.name}' deleted successfully.", "deleted_id": workspace_id}

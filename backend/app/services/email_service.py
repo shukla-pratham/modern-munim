@@ -179,8 +179,10 @@ def send_login_otp(to_email: str, code: str, store_name: str | None) -> str:
         try:
             return send_email(to_email, "Your Modern Munim login code", body)
         except HTTPException as exc:
-            # In development, do not block sign-in when local network blocks delivery.
-            if settings.ENVIRONMENT == "development" and settings.EMAIL_OTP_DEV_LOG:
+            # In development/staging, do not block sign-in when delivery fails
+            # (e.g. Resend free-tier domain restriction on local staging).
+            _non_prod = settings.ENVIRONMENT in ("development", "staging")
+            if _non_prod and settings.EMAIL_OTP_DEV_LOG:
                 _log_dev_otp(
                     to_email,
                     code,
@@ -190,8 +192,8 @@ def send_login_otp(to_email: str, code: str, store_name: str | None) -> str:
                 return "log"
             raise
 
-    # Development fallback when no email provider is configured at all.
-    if settings.ENVIRONMENT == "development" and settings.EMAIL_OTP_DEV_LOG:
+    # Development/staging fallback when no email provider is configured at all.
+    if settings.ENVIRONMENT in ("development", "staging") and settings.EMAIL_OTP_DEV_LOG:
         _log_dev_otp(to_email, code, store_name, "Email service not configured")
         return "log"
 
