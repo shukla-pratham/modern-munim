@@ -11,11 +11,30 @@ import {
 
 function apiErrorMessage(err: unknown, fallback: string): string {
   const ax = err as {
-    response?: { data?: { detail?: unknown; error?: string } };
+    code?: string;
+    response?: { status?: number; data?: { detail?: unknown; error?: string } };
     message?: string;
   };
   if (!ax.response) {
-    return 'Could not connect to server.';
+    // Axios sets code='ECONNABORTED' for request timeouts (timeout option exceeded).
+    if (ax.code === 'ECONNABORTED') {
+      return 'The server is taking longer than expected. It may be waking up — please try again in a moment.';
+    }
+    // ERR_NETWORK covers DNS failures, refused connections, and offline state.
+    if (ax.code === 'ERR_NETWORK') {
+      return 'Network error: could not reach the server. Check your internet connection and try again.';
+    }
+    return 'Could not connect to the server. Please try again.';
+  }
+  const status = ax.response.status;
+  if (status === 401) {
+    return 'Incorrect email or password.';
+  }
+  if (status === 403) {
+    return 'Access denied. Your account does not have permission to sign in here.';
+  }
+  if (status != null && status >= 500) {
+    return 'The server encountered an error. Please try again shortly.';
   }
   const data = ax.response.data ?? {};
   if (typeof data.error === 'string' && data.error.trim() && data.error !== 'Validation failed') {
@@ -268,8 +287,13 @@ export default function LoginPage({ onLogin }: { onLogin: () => void }) {
                 whileTap={{ scale: 0.97 }}
                 className="w-full py-2.5 bg-primary text-primary-foreground rounded-lg font-medium text-sm flex items-center justify-center gap-2 hover:opacity-90 transition-opacity mt-2 disabled:opacity-70"
               >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Sign In <ArrowRight className="w-4 h-4" /></>}
+                {loading ? <><Loader2 className="w-4 h-4 animate-spin" /> Signing in…</> : <>Sign In <ArrowRight className="w-4 h-4" /></>}
               </motion.button>
+              {loading && (
+                <p className="text-xs text-muted-foreground text-center">
+                  Connecting to server; the first request may take a moment.
+                </p>
+              )}
               <button
                 type="button"
                 className="w-full text-xs text-primary hover:underline"
